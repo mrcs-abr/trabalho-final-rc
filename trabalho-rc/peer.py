@@ -39,7 +39,6 @@ class Peer:
         print("========== Login ==========")
         user = input("Digite seu usuario: ").strip()
         input_password = input("Digite sua senha: ").strip()
-        password = hash_password(input_password)
         requisition = {
             "cmd": "login", 
             "usr": user, 
@@ -71,11 +70,10 @@ class Peer:
         input_password = input("Digite uma senha: ").strip()
 
         if user and input_password:
-            password = hash_password(input_password)
             requisition = {
                 "cmd": "register", 
                 "usr": user, 
-                "password": password,
+                "password": input_password,
                 "port": self.peer_port,
             }
 
@@ -88,7 +86,7 @@ class Peer:
             self.process_register()
 
     
-    def process_chat_functions():
+    def process_chat_functions(self):
         while True:
             print("========== Chatp2p ==========")
             print("Escolha uma opção: ")

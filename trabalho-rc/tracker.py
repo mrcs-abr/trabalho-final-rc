@@ -50,10 +50,7 @@ class Tracker:
                     if response.get("status") == "ok":
                         continue
                     else:
-                        self.process_peer_register()
-                        
-
-
+                        self.process_peer_register(peer_requisition)
 
     def process_peer_login(self, peer_req):
         user = peer_req.get("usr")
@@ -82,7 +79,7 @@ class Tracker:
             print(self.users)
             return {"status": "ok", "message": "Usuario registrado!"}
 
-    def process_chat():
+    def process_chat(self):
         ...
     
 
