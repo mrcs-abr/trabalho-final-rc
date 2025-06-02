@@ -8,12 +8,15 @@ class Peer:
         self.tracker_info = (tracker_host, tracker_port)
         self.peer_port = peer_port
         self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
         self.private_key, self.public_key = generate_rsa_keys()
         self.public_key_str = serialize_public_key(self.public_key)
         
-        self.peer_socket.connect(self.tracker_info)
-        
+        try:
+            #self.peer_socket.bind(("", self.peer_port))
+            self.peer_socket.connect(self.tracker_info)
+        except socket.error as e:
+            print(f"Erro ao conectar ao tracker: {e}")
+
         # Key exchange with tracker
         self.tracker_public_key = deserialize_public_key(
             json.loads(self.peer_socket.recv(4096).decode())["public_key"])
@@ -27,12 +30,14 @@ class Peer:
             print("[2] Registrar")
             print("[3] Sair")
 
-            try:
-                option = int(input("->"))
-            except:
-                print("Opção inválida")
-                option = int(input("->"))
-                continue
+            while True:
+                try:
+                    option = int(input("->"))
+                    break
+                except:
+                    print("Opção inválida")
+                    option = int(input("->"))
+                    continue
             
             match option:
                 case 1:
@@ -58,7 +63,7 @@ class Peer:
             self.tracker_public_key, json.dumps(requisition))
         self.peer_socket.send(encrypted_requisition.encode())
         
-        encrypted_data = self.peer_socket.recv(1024).decode()
+        encrypted_data = self.peer_socket.recv(4096).decode()
         data = decrypt_with_private_key(self.private_key, encrypted_data)
         response = json.loads(data)
         print(response)

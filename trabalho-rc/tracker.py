@@ -1,5 +1,4 @@
-# tracker.py
-import socket, json
+import socket, json, threading
 from threading import Thread
 from encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
@@ -16,13 +15,18 @@ class Tracker:
         self.public_key_str = serialize_public_key(self.public_key)
 
         self.users = {
-            "tonhao": {
+            #usuario test
+            "teste": {
                 "password": hash_password("senha123"),  
-                'active': False
             }
         }
         self.active_peers = {}
         self.chat_rooms = {}
+
+        # Avoid race coditions when accessing server storage
+        self.users_lock = threading.Lock()
+        self.active_peers_lock = threading.Lock()
+        self.chat_rooms_lock= threading.Lock()
 
         print(f"Tracker iniciado em {self.host}:{self.port}")
         print("Aguardando conexões...")
@@ -48,28 +52,34 @@ class Tracker:
             
             match cmd:
                 case "login":
-                    response = self.process_peer_login(peer_requisition)
+                    response = self.process_peer_login(peer_requisition, address)
                     encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
                     peer_conec.send(encrypted_response.encode())
 
-                    if response.get("status") == "ok":
-                        self.process_chat()
                 case "register":
                     response = self.process_peer_register(peer_requisition)
                     encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
                     peer_conec.send(encrypted_response.encode())
 
-                    if response.get("status") == "ok":
-                        continue
-                    else:
-                        self.process_peer_register(peer_requisition)
-
-    def process_peer_login(self, peer_req):
+    def process_peer_login(self, peer_req, address):
         user = peer_req.get("usr")
         password = peer_req.get("password")
+        peer_ip, peer_port = address
 
-        if user in self.users and self.users[user]["password"] == hash_password(password):
-            self.users[user]["active"] = True
+        user_data = None
+        
+        with self.users_lock:
+            if user in self.users and self.users[user]["password"] == hash_password(password):
+                user_data = self.users[user]
+
+        if user_data:
+            with self.active_peers_lock:
+                self.active_peers[user] = {
+                    "peer-ip": peer_ip,
+                    "peer-port": peer_port,
+                }
+
+            print(f"DEBUG: Peer {user} logado. Active_peers: {self.active_peers}")
             return {"status": "ok", "message": "Login bem sucedido"}
 
         return {"status": "error", "message": "Usuario ou senha incorretos"}
@@ -78,21 +88,19 @@ class Tracker:
         user = peer_req.get("usr")
         password = peer_req.get("password")
 
-        if user in self.users:
-            return {"status": "error", "message": "Usuario ja existente"}
-        else:
-            new_user = {
-                user: {
-                    "password": hash_password(password),
-                    "active": False
+        with self.users_lock:
+            if user in self.users:
+                return {"status": "error", "message": "Usuario ja existente"}
+            else:
+                new_user = {
+                    user: {
+                        "password": hash_password(password),
+                    }
                 }
-            }
-            self.users.update(new_user)
-            print(self.users)
-            return {"status": "ok", "message": "Usuario registrado!"}
+                self.users.update(new_user)
+                print(self.users)
+                return {"status": "ok", "message": "Usuario registrado!"}
 
-    def process_chat(self):
-        ...
 
 if __name__ == "__main__":
     tracker = Tracker()
