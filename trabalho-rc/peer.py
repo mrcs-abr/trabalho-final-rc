@@ -49,45 +49,12 @@ class Peer:
                     break
     
     def process_login(self):
-        print("========== Login ==========")
-        user = input("Digite seu usuario: ").strip()
-        input_password = input("Digite sua senha: ").strip()
-        requisition = {
-            "cmd": "login", 
-            "usr": user, 
-            "password": input_password,
-            "port": self.peer_port,
-        }
-
-        encrypted_requisition = encrypt_with_public_key(
-            self.tracker_public_key, json.dumps(requisition))
-        self.peer_socket.send(encrypted_requisition.encode())
-        
-        encrypted_data = self.peer_socket.recv(4096).decode()
-        data = decrypt_with_private_key(self.private_key, encrypted_data)
-        response = json.loads(data)
-        print(response)
-
-        if response.get("status") == "ok":
-            print(response.get("message"))
-            self.process_chat_functions()
-        else:
-            print(response.get("message"))
-            option = input("Deseja tentar novamente? [s/n]").strip()
-
-            if option == "s":
-                self.process_login()
-            else:
-                self.start()
-
-    def process_register(self):
-        print("========== Registro de usuario ==========")
-        user = input("Digite um nome de usuario: ").strip()
-        input_password = input("Digite uma senha: ").strip()
-
-        if user and input_password:
+        while True:
+            print("========== Login ==========")
+            user = input("Digite seu usuario: ").strip()
+            input_password = input("Digite sua senha: ").strip()
             requisition = {
-                "cmd": "register", 
+                "cmd": "login", 
                 "usr": user, 
                 "password": input_password,
                 "port": self.peer_port,
@@ -97,13 +64,48 @@ class Peer:
                 self.tracker_public_key, json.dumps(requisition))
             self.peer_socket.send(encrypted_requisition.encode())
             
-            encrypted_data = self.peer_socket.recv(1024).decode()
+            encrypted_data = self.peer_socket.recv(4096).decode()
             data = decrypt_with_private_key(self.private_key, encrypted_data)
             response = json.loads(data)
             print(response)
-        else:
-            print("Usuario ou senha invalidos")
-            self.process_register()
+
+            if response.get("status") == "ok":
+                print(response.get("message"))
+                self.process_chat_functions()
+            else:
+                print(response.get("message"))
+                option = input("Deseja tentar novamente? [s/n]").strip()
+
+                if option == "n":
+                    break
+
+    def process_register(self):
+        while True:
+            print("========== Registro de usuario ==========")
+            user = input("Digite um nome de usuario: ").strip()
+            input_password = input("Digite uma senha: ").strip()
+
+            if user and input_password:
+                requisition = {
+                    "cmd": "register", 
+                    "usr": user, 
+                    "password": input_password,
+                    "port": self.peer_port,
+                }
+
+                encrypted_requisition = encrypt_with_public_key(
+                    self.tracker_public_key, json.dumps(requisition))
+                self.peer_socket.send(encrypted_requisition.encode())
+                
+                encrypted_data = self.peer_socket.recv(1024).decode()
+                data = decrypt_with_private_key(self.private_key, encrypted_data)
+                response = json.loads(data)
+
+                if response.get("status") == "ok":
+                    print(response)
+                    break           
+            else:
+                print("Usuario ou senha invalidos, tente novamente")
 
     def process_chat_functions(self):
         while True:
@@ -112,7 +114,8 @@ class Peer:
             print("[1] Listar usuarios ativos")
             print("[2] Listar salas disponiveis")
             print("[3] Criar sala")
-            print("[4] Iniciar chat privado")
+            print("[4] Entrar em uma sala")
+            print("[5] Iniciar chat privado")
             
             try:
                 option = int(input("->"))
@@ -123,13 +126,61 @@ class Peer:
             
             match option:
                 case 1:
-                    ...
+                    self.process_list_peers()
                 case 2:
-                    ...
+                    self.process_list_rooms()
                 case 3:
                     ...
                 case 4:
                     ...
+                case 5:
+                    ...
+    
+    def process_list_peers(self):
+        requisition = {
+            "cmd": "list-peers"
+        }
+        encrypted_requisition = encrypt_with_public_key(
+        self.tracker_public_key, json.dumps(requisition))
+        self.peer_socket.send(encrypted_requisition.encode())
+                
+        encrypted_data = self.peer_socket.recv(1024).decode()
+        data = decrypt_with_private_key(self.private_key, encrypted_data)
+        response = json.loads(data)
+
+        users_list = response.get("peer-list")
+        
+        print("========== Lista de usuários ativos ==========")
+
+        for user in users_list:
+            print(f"Usuario: {user}")
+
+        input("pressione qualquer tecla para retornar: ")
+    
+    def process_list_rooms(self):
+        requisition = {
+            "cmd": "list-rooms"
+        }
+        encrypted_requisition = encrypt_with_public_key(
+        self.tracker_public_key, json.dumps(requisition))
+        self.peer_socket.send(encrypted_requisition.encode())
+                
+        encrypted_data = self.peer_socket.recv(1024).decode()
+        data = decrypt_with_private_key(self.private_key, encrypted_data)
+        response = json.loads(data)
+
+        rooms_list = response.get("rooms-list")
+        
+        print("========== Lista de salas ==========")
+        if rooms_list:
+            for room in rooms_list:
+                print(f"Sala: {room}")
+        else:
+            print("Não há nenhuma sala disponível no momento")
+
+        input("pressione qualquer tecla para retornar: ")
+
+        
 
 if __name__ == "__main__":
     peer = Peer()

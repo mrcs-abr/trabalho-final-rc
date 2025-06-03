@@ -38,28 +38,49 @@ class Tracker:
             Thread(target=self.process_new_peer, args=(peer_conec, address)).start()
 
     def process_new_peer(self, peer_conec, address):
-        peer_conec.send(json.dumps({"public_key": self.public_key_str}).encode())
-        
-        peer_public_key_str = json.loads(peer_conec.recv(4096).decode())["public_key"]
-        peer_public_key = deserialize_public_key(peer_public_key_str)
-        
-        while True:
-            encrypted_data = peer_conec.recv(4096).decode()
-            data = decrypt_with_private_key(self.private_key, encrypted_data)
-            peer_requisition = json.loads(data)
-            
-            cmd = peer_requisition.get("cmd")
-            
-            match cmd:
-                case "login":
-                    response = self.process_peer_login(peer_requisition, address)
-                    encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
-                    peer_conec.send(encrypted_response.encode())
+            user = None
+            try:
+                peer_conec.send(json.dumps({"public_key": self.public_key_str}).encode())
+                
+                peer_public_key_str = json.loads(peer_conec.recv(4096).decode())["public_key"]
+                peer_public_key = deserialize_public_key(peer_public_key_str)
+                
+                while True:
+                    encrypted_data = peer_conec.recv(4096).decode()
+                    data = decrypt_with_private_key(self.private_key, encrypted_data)
+                    peer_requisition = json.loads(data)
+                    
+                    cmd = peer_requisition.get("cmd")
+                    
+                    match cmd:
+                        case "login":
+                            response = self.process_peer_login(peer_requisition, address)
+                            if response.get("status") == "ok":
+                                user = response.get("usr")
 
-                case "register":
-                    response = self.process_peer_register(peer_requisition)
+                        case "register":
+                            response = self.process_peer_register(peer_requisition)
+                        
+                        case "list-peers":
+                            response = self.list_peers()
+
+                        case "list-rooms":
+                            response = self.list_rooms()
+                        case _:
+                            response = {"status": "error", "message": "Comando inválido"}
+
+                    print(response)
                     encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
                     peer_conec.send(encrypted_response.encode())
+            
+            except (ConnectionResetError, json.JSONDecodeError, ValueError) as e:
+                print(f"Erro de conexão com peer {str(address)}: {str(e)}")
+                if user is not None:
+                    with self.active_peers_lock:
+                        if user in self.active_peers:
+                            del self.active_peers[user]
+                            print(f"Peer {user} desconectado. Active_peers: {self.active_peers}")
+                peer_conec.close()
 
     def process_peer_login(self, peer_req, address):
         user = peer_req.get("usr")
@@ -79,8 +100,8 @@ class Tracker:
                     "peer-port": peer_port,
                 }
 
-            print(f"DEBUG: Peer {user} logado. Active_peers: {self.active_peers}")
-            return {"status": "ok", "message": "Login bem sucedido"}
+            print(f"Peer {user} logado. Active_peers: {self.active_peers}")
+            return {"status": "ok", "message": "Login bem sucedido", "usr": user}
 
         return {"status": "error", "message": "Usuario ou senha incorretos"}
 
@@ -101,6 +122,13 @@ class Tracker:
                 print(self.users)
                 return {"status": "ok", "message": "Usuario registrado!"}
 
+    def list_peers(self):
+        with self.active_peers_lock:
+            return {"status": "ok", "peer-list": self.active_peers}
+    
+    def list_rooms(self):
+        with self.chat_rooms_lock:
+            return {"status": "ok", "rooms-list": self.chat_rooms}
 
 if __name__ == "__main__":
     tracker = Tracker()
