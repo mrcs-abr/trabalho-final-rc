@@ -102,8 +102,10 @@ class Peer:
                 response = json.loads(data)
 
                 if response.get("status") == "ok":
-                    print(response)
-                    break           
+                    break
+                else:
+                    input("O nome de usuário em uso, tente novamente com outro nome.\nPressione qualquer tecla para continuar...")
+
             else:
                 print("Usuario ou senha invalidos, tente novamente")
 
