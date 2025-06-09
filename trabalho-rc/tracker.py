@@ -23,7 +23,6 @@ class Tracker:
         self.active_peers = {}
         self.chat_rooms = {}
 
-        # Avoid race coditions when accessing server storage
         self.users_lock = threading.Lock()
         self.active_peers_lock = threading.Lock()
         self.chat_rooms_lock= threading.Lock()
@@ -54,7 +53,7 @@ class Tracker:
                     
                     match cmd:
                         case "login":
-                            response = self.process_peer_login(peer_requisition, address)
+                            response = self.process_peer_login(peer_requisition, peer_conec, address, peer_public_key_str)
                             if response.get("status") == "ok":
                                 user = response.get("usr")
 
@@ -70,6 +69,9 @@ class Tracker:
                         case "create-room":
                             response = self.process_create_room(peer_requisition, user)
                         
+                        case "join-room":
+                            response = self.process_join_room(peer_requisition, user)
+                        
                         case "list-my-rooms":
                             response = self.process_list_my_rooms(user)
 
@@ -82,11 +84,15 @@ class Tracker:
                         case "remove-member":
                             response = self.process_remove_member(peer_requisition, user)
 
-                        case "ban-user":
-                            response = self.process_ban_user(peer_requisition, user)
-
                         case "close-room":
                             response = self.process_close_room(peer_requisition, user)
+
+                        case "send-room-message":
+                            response = self.broadcast_to_room(
+                                peer_requisition["room-name"],
+                                user,
+                                peer_requisition["message"],
+                            )
 
                         case _:
                             response = {"status": "error", "message": "Comando inválido"}
@@ -104,7 +110,7 @@ class Tracker:
                             print(f"Peer {user} desconectado. Active_peers: {self.active_peers}")
                 peer_conec.close()
 
-    def process_peer_login(self, peer_req, address):
+    def process_peer_login(self, peer_req, peer_conec, address, peer_public_key_str):
         user = peer_req.get("usr")
         password = peer_req.get("password")
         peer_ip, peer_port = address
@@ -120,6 +126,8 @@ class Tracker:
                 self.active_peers[user] = {
                     "peer-ip": peer_ip,
                     "peer-port": peer_port,
+                    "peer-socket": peer_conec,
+                    "peer-public-key": peer_public_key_str,
                 }
 
             print(f"Peer {user} logado. Active_peers: {self.active_peers}")
@@ -146,11 +154,13 @@ class Tracker:
 
     def list_peers(self):
         with self.active_peers_lock:
-            return {"status": "ok", "peer-list": self.active_peers}
+            peer_usernames = list(self.active_peers.keys())
+            return {"status": "ok", "peer-list": peer_usernames}
     
     def list_rooms(self):
         with self.chat_rooms_lock:
-            return {"status": "ok", "rooms-list": self.chat_rooms}
+            rooms = list(self.chat_rooms.keys())
+            return {"status": "ok", "rooms-list": rooms}
     
     def process_create_room(self, peer_req, creator):
         """
@@ -169,39 +179,68 @@ class Tracker:
             # Cria a nova sala com o criador como primeiro membro
             self.chat_rooms[room_name] = {
                 "creator": creator,
+                "moderator": creator,
                 "members": [creator],
-                "messages": []
+                "messages": [],
+                "is_active": True,
             }
             print(f"Sala '{room_name}' criada por {creator}. Salas disponíveis: {self.chat_rooms}")
             return {"status": "ok", "message": f"Sala '{room_name}' criada com sucesso"}
 
-    def process_create_room(self, peer_req, creator):
+    def process_join_room(self, peer_req, user):
+        
         room_name = peer_req.get("room-name")
-        
-        if not room_name:
-            return {"status": "error", "message": "Nome da sala não pode ser vazio"}
-        
+
         with self.chat_rooms_lock:
             if room_name in self.chat_rooms:
-                return {"status": "error", "message": "Sala já existe"}
-            
-            self.chat_rooms[room_name] = {
-                "creator": creator,
-                "moderators": [creator],  # Lista de moderadores
-                "members": [creator],     # Membros atuais
-                "banned": [],            # Usuários banidos
-                "is_active": True        # Status da sala
-            }
-            
-            print(f"Sala '{room_name}' criada por {creator}")
-            return {"status": "ok", "message": f"Sala '{room_name}' criada com sucesso"}
+                if user in self.chat_rooms[room_name]["members"]:
+                    response = {
+                        "status": "ok",
+                        "message": f"{user} entrou na sala com sucesso",
+                        "room-name": room_name,
+                    }
+                    return response
+                return {"status": "error", "message": "Usuário sem permissão para entrar na sala"}
+            return {"status": "error", "message": "Sala não encontrada"}
+    
+    def broadcast_to_room(self, room_name, sender, message):
+        """Envia uma mensagem para todos os membros de uma sala."""
+        with self.chat_rooms_lock:
+            if room_name not in self.chat_rooms:
+                return {"status": "error", "message": "Sala não encontrada"}
+
+            room = self.chat_rooms[room_name]
+            members = room["members"]
+
+        with self.active_peers_lock:
+            for member in members:
+                if member in self.active_peers:  # Verifica se o membro está online
+                    peer_socket = self.active_peers[member]["peer-socket"]
+                    try:
+                        # Envia a mensagem criptografada para o peer
+                        peer_public_key_obj = deserialize_public_key(self.active_peers[member]["peer-public-key"])
+                        encrypted_msg = encrypt_with_public_key(
+                            peer_public_key_obj, 
+                            json.dumps({
+                                "cmd": "room-message",
+                                "room": room_name,
+                                "sender": sender,
+                                "message": message
+                            })
+                        )
+                        peer_socket.send(encrypted_msg.encode())
+                    except Exception as e:
+                        print(f"Erro ao enviar mensagem para {member}: {e}")
+                        continue
+
+        return {"status": "ok", "message": "Mensagem enviada para a sala"}
 
     def process_list_my_rooms(self, user):
         """Lista salas onde o usuário é moderador"""
         with self.chat_rooms_lock:
             my_rooms = [
                 room_name for room_name, room_data in self.chat_rooms.items()
-                if user in room_data["moderators"] and room_data["is_active"]
+                if user == room_data["moderator"] and room_data["is_active"]
             ]
             return {"status": "ok", "rooms": my_rooms}
     
@@ -215,7 +254,7 @@ class Tracker:
             return {
                 "status": "ok",
                 "members": self.chat_rooms[room_name]["members"],
-                "moderators": self.chat_rooms[room_name]["moderators"]
+                "moderator": self.chat_rooms[room_name]["moderator"]
             }
     
     def process_add_member(self, peer_req, moderator):
@@ -230,12 +269,8 @@ class Tracker:
             room = self.chat_rooms[room_name]
             
             # Verifica se é moderador
-            if moderator not in room["moderators"]:
+            if moderator not in room["moderator"]:
                 return {"status": "error", "message": "Apenas moderadores podem adicionar membros"}
-            
-            # Verifica se usuário está banido
-            if user_to_add in room["banned"]:
-                return {"status": "error", "message": "Este usuário está banido desta sala"}
             
             # Verifica se já é membro
             if user_to_add in room["members"]:
@@ -257,11 +292,11 @@ class Tracker:
             room = self.chat_rooms[room_name]
             
             # Verifica se é moderador
-            if moderator not in room["moderators"]:
+            if moderator not in room["moderator"]:
                 return {"status": "error", "message": "Apenas moderadores podem remover membros"}
             
             # Não permite remover moderadores
-            if user_to_remove in room["moderators"]:
+            if user_to_remove in room["moderator"]:
                 return {"status": "error", "message": "Não pode remover outros moderadores"}
             
             # Remove membro
@@ -270,34 +305,6 @@ class Tracker:
                 return {"status": "ok", "message": f"Usuário {user_to_remove} removido da sala"}
             
             return {"status": "error", "message": "Usuário não encontrado na sala"}
-    
-    def process_ban_user(self, peer_req, moderator):
-        """Bane um usuário da sala"""
-        room_name = peer_req.get("room-name")
-        user_to_ban = peer_req.get("user")
-        
-        with self.chat_rooms_lock:
-            if room_name not in self.chat_rooms:
-                return {"status": "error", "message": "Sala não encontrada"}
-            
-            room = self.chat_rooms[room_name]
-            
-            # Verifica se é moderador
-            if moderator not in room["moderators"]:
-                return {"status": "error", "message": "Apenas moderadores podem banir usuários"}
-            
-            # Não permite banir moderadores
-            if user_to_ban in room["moderators"]:
-                return {"status": "error", "message": "Não pode banir outros moderadores"}
-            
-            # Adiciona à lista de banidos e remove dos membros
-            if user_to_ban not in room["banned"]:
-                room["banned"].append(user_to_ban)
-            
-            if user_to_ban in room["members"]:
-                room["members"].remove(user_to_ban)
-            
-            return {"status": "ok", "message": f"Usuário {user_to_ban} banido da sala"}
     
     def process_close_room(self, peer_req, moderator):
         """Fecha permanentemente uma sala"""
