@@ -1,5 +1,5 @@
 import socket, json
-from encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
+from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Peer:
     def __init__(self, tracker_host="localhost", tracker_port=6000):
