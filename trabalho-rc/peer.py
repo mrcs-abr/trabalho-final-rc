@@ -1,4 +1,4 @@
-import socket, json, threading
+import socket, json
 from encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Peer:
@@ -9,7 +9,6 @@ class Peer:
         self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.private_key, self.public_key = generate_rsa_keys()
         self.public_key_str = serialize_public_key(self.public_key)
-        self.print_lock = threading.Lock()
         
         try:
             self.peer_socket.connect(self.tracker_info)
@@ -57,7 +56,7 @@ class Peer:
                 "password": input_password,
             }
 
-            response = self.send_encrypted_message(requisition)
+            response = self.send_encrypted_request(requisition)
             print(response)
 
             if response.get("status") == "ok":
@@ -83,7 +82,7 @@ class Peer:
                     "password": input_password,
                 }
 
-                response = self.send_encrypted_message(requisition)
+                response = self.send_encrypted_request(requisition)
 
                 if response.get("status") == "ok":
                     break
@@ -119,7 +118,7 @@ class Peer:
                 case 3:
                     self.process_create_room()
                 case 4:
-                    self.process_join_room()
+                    ...
                 case 5:
                     ...
                 case 6:
@@ -130,7 +129,7 @@ class Peer:
             "cmd": "list-peers"
         }
 
-        response = self.send_encrypted_message(requisition)
+        response = self.send_encrypted_request(requisition)
 
         users_list = response.get("peer-list")
         
@@ -146,7 +145,7 @@ class Peer:
             "cmd": "list-rooms"
         }
 
-        response = self.send_encrypted_message(requisition)
+        response = self.send_encrypted_request(requisition)
 
         rooms_list = response.get("rooms-list")
         
@@ -174,7 +173,7 @@ class Peer:
         }
         
         try:
-            response = self.send_encrypted_message(requisition)
+            response = self.send_encrypted_request(requisition)
             
             if response.get("status") == "ok":
                 print(f"Sala '{room_name}' criada com sucesso!")
@@ -185,46 +184,6 @@ class Peer:
             print(f"Erro durante a criação da sala: {str(e)}")
         
         input("Pressione qualquer tecla para retornar: ")
-    
-    def process_join_room(self):
-        room_name = input("Digite o nome da sala que deseja entrar: ").strip()
-        requisition = {
-            "cmd": "join-room",
-            "room-name": room_name,
-        }
-
-        response = self.send_encrypted_message(requisition)
-
-        if response.get("status") == "ok":
-            print(f"========== Bem vindo a sala <{room_name}> ==========")
-            print("Digite /sair para sair da sala.")
-            
-            threading.Thread(target=self.listen_messages, daemon=True).start()
-
-            while True:
-                message = input("Eu: ").strip()
-                if message.lower() == "/sair":
-                    break
-
-                send_req = {
-                    "cmd": "send-room-message",
-                    "room-name": room_name,
-                    "message": message
-                }
-
-                self.send_encrypted_message(send_req)
-
-    def listen_messages(self):
-        while True:
-            try:
-                with self.print_lock:
-                    data = self.recv_encrypted_message()
-                    if data.get("cmd") == "room-message":
-                        print(f"[{data['sender']}]: {data['message']}")
-            except Exception as e:
-                print("Erro ao receber mensagem: {e}")
-                break
-
 
     def process_manage_room(self):
         """
@@ -234,8 +193,8 @@ class Peer:
         requisition = {
             "cmd": "list-my-rooms"
         }
-
-        response = self.send_encrypted_message(requisition)
+        
+        response = self.send_encrypted_request(requisition)
         
         if response.get("status") != "ok" or not response.get("rooms"):
             print("Você não é moderador de nenhuma sala")
@@ -293,13 +252,14 @@ class Peer:
             "room-name": room_name
         }
         
-        response = self.send_encrypted_message(requisition)
-        room_members = response.get("members")
+        response = self.send_encrypted_request(requisition)
 
-        print("Membros na sala: ")
-        for member in room_members:
+        members = response.get("members")
+
+        print(f"========== Usuários com acesso a sala <{room_name}> ==========")
+        for member in members:
             print(member)
-        
+
         input("Pressione qualquer tecla para retornar...")
     
     def process_add_member(self, room_name):
@@ -315,7 +275,7 @@ class Peer:
             "user": user
         }
         
-        self.send_encrypted_message(requisition)
+        self.send_encrypted_request(requisition)
     
     def process_remove_member(self, room_name):
         """Remove um usuário da sala"""
@@ -330,7 +290,7 @@ class Peer:
             "user": user
         }
         
-        self.send_encrypted_message(requisition)
+        self.send_encrypted_request(requisition)
     
     def process_close_room(self, room_name):
         """Fecha permanentemente a sala"""
@@ -344,9 +304,9 @@ class Peer:
             "room-name": room_name
         }
         
-        self.send_encrypted_message(requisition)
+        self.send_encrypted_request(requisition)
     
-    def send_encrypted_message(self, requisition):
+    def send_encrypted_request(self, requisition):
         """Helper para enviar requisições criptografadas"""
         encrypted = encrypt_with_public_key(
             self.tracker_public_key, json.dumps(requisition))
@@ -357,14 +317,6 @@ class Peer:
         response = json.loads(data)
         
         return response
-    
-    def recv_encrypted_message(self):
-        encrypted_data = self.peer_socket.recv(4096).decode()
-        data = decrypt_with_private_key(self.private_key, encrypted_data)
-        response = json.loads(data)
-        
-        return response
-
         
 if __name__ == "__main__":
     peer = Peer()
