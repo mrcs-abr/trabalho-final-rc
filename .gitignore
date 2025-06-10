@@ -105,10 +105,11 @@ celerybeat.pid
 .venv
 env/
 venv/
-/trabalho-rc/bin/
-/trabalho-rc/lib/
-/trabalho-rc/include/
-/trabalho-rc/pyenv.cfg
+trabalho-rc/bin/
+trabalho-rc/lib/
+trabalho-rc/include/
+trabalho-rc/pyenv.cfg
+trabalho-rc/data_storage
 ENV/
 env.bak/
 venv.bak/
