@@ -23,8 +23,7 @@ class User_manager:
     def save_users(self):
         with open(USER_DATA_FILE, "w") as f:
             json.dump(self.users, f, indent=4)
-
-    
+ 
     def register(self, user, password):
         with self.users_lock:
             if user in self.users:

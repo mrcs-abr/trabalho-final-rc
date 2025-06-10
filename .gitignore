@@ -108,7 +108,7 @@ venv/
 /trabalho-rc/bin/
 /trabalho-rc/lib/
 /trabalho-rc/include/
-/trabalho-rc/pyenv.cfg
+/trabalho-rc/pyvenv.cfg
 /trabalho-rc/data_storage
 ENV/
 env.bak/
