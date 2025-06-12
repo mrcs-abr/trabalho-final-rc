@@ -53,28 +53,45 @@ class Tracker:
                             response = self.user_manager.register(peer_requisition["usr"], peer_requisition["password"])
                         
                         case "list-peers":
-                            response = self.user_manager.list_active_peers()
+                            if user:
+                                response = self.user_manager.list_active_peers()
 
                         case "list-rooms":
-                            response = self.room_manager.list_rooms()
+                            if user:
+                                response = self.room_manager.list_rooms()
                         
                         case "create-room":
-                            response = self.room_manager.create_room(peer_requisition["room-name"], user)
+                            if user:
+                                response = self.room_manager.create_room(peer_requisition["room-name"], user)
                         
                         case "list-my-rooms":
-                            response = self.room_manager.list_my_rooms(user)
+                            if user:
+                                response = self.room_manager.list_my_rooms(user)
 
                         case "list-members":
-                            response = self.room_manager.list_members(peer_requisition["room-name"])
+                            if user:
+                                response = self.room_manager.list_members(peer_requisition["room-name"])
 
                         case "add-member":
-                            response = self.room_manager.add_member(peer_requisition["room-name"], peer_requisition["user"], user)
+                            if user:
+                                response = self.room_manager.add_member(peer_requisition["room-name"], peer_requisition["user"], user, self.user_manager.users)
 
                         case "remove-member":
-                            response = self.room_manager.remove_member(peer_requisition["room-name"], peer_requisition["user"], user)
+                            if user:
+                                response = self.room_manager.remove_member(peer_requisition["room-name"], peer_requisition["user"], user)
 
                         case "close-room":
-                            response = self.room_manager.close_room(peer_requisition["room-name"], user)
+                            if user:
+                                response = self.room_manager.close_room(peer_requisition["room-name"], user)
+                        
+                        case "p2p-chat":
+                            if user:
+                                response = self.user_manager.list_peers_to_connect(user)
+                        
+                        case "heartbeat":
+                            if user:
+                                response = self.user_manager.update_heartbeat(user)
+                                self.room_manager.update_mod_heartbeat(user)
 
                         case _:
                             response = {"status": "error", "message": "Comando inválido"}

@@ -1,4 +1,4 @@
-import threading, os, json
+import threading, os, json, time
 
 ROOM_DATA_FILE = "data_storage/rooms.json"
 
@@ -6,6 +6,8 @@ class Room_manager:
     def __init__(self):
         self.chat_rooms = self.load_rooms()
         self.lock = threading.Lock()
+
+        threading.Thread(target=self.monitor_rooms,daemon=True).start()
     
     def load_rooms(self):
         if os.path.exists(ROOM_DATA_FILE):
@@ -36,6 +38,7 @@ class Room_manager:
             
             self.chat_rooms[room_name] = {
                 "moderator": creator,
+                "mod-last-seen": time.time(),
                 "members": [creator],
                 "in-room": []
             }
@@ -62,7 +65,7 @@ class Room_manager:
                 "moderator": room["moderator"]
             }
     
-    def add_member(self, room_name, user_to_add, moderator):
+    def add_member(self, room_name, user_to_add, moderator, users):
         with self.lock:
             if room_name not in self.chat_rooms:
                 return {"status": "error", "message": "Sala não encontrada"}
@@ -74,7 +77,10 @@ class Room_manager:
             
             if user_to_add in room["members"]:
                 return {"status": "error", "message": "Usuário já é membro desta sala"}
-
+            
+            if user_to_add not in users:
+                return {"status": "error", "message": "Esse usuário não existe"}
+            
             room["members"].append(user_to_add)
             self.save_rooms()
             return {"Status": "ok", "message": f"Usuário {user_to_add} adicionado à sala"}
@@ -98,6 +104,25 @@ class Room_manager:
                 return {"status": "ok", "message": f"Usuário {user_to_remove} removido da sala"}
             
             return {"status": "ok", "message": "Usuário não encontrado"}
+    
+    def update_mod_heartbeat(self, user):
+        for room in self.chat_rooms.values():
+            if room["moderator"] == user:
+                room["mod-last-seen"] = time.time()
+    
+    def monitor_rooms(self):
+        while True:
+            time.sleep(10)
+            now = time.time()
+            to_close = []
+
+            for room_name, room in self.chat_rooms.items():
+                if now - room.get("mod-last-seen", now) > 60:
+                    print(f"Fechando sala {room_name} por inatividade do moderador")
+                    to_close.append(room_name)
+            
+            for room_name in to_close:
+                self.close_room(room_name, self.chat_rooms[room_name]["moderator"])
     
     def close_room(self, room_name, moderator):
         with self.lock:

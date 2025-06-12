@@ -1,11 +1,12 @@
-import socket, json
+import socket, json, time, threading
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Peer:
-    def __init__(self, tracker_host="localhost", tracker_port=6000):
+    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_listen_port=5500):
         self.tracker_host = tracker_host
         self.tracker_port = tracker_port
         self.tracker_info = (tracker_host, tracker_port)
+        self.peer_listen_port = peer_listen_port
         self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.private_key, self.public_key = generate_rsa_keys()
         self.public_key_str = serialize_public_key(self.public_key)
@@ -61,7 +62,9 @@ class Peer:
 
             if response.get("status") == "ok":
                 print(response.get("message"))
+                threading.Thread(target=self.send_heartbeat, daemon=True).start()
                 self.process_chat_functions()
+                break
             else:
                 print(response.get("message"))
                 option = input("Deseja tentar novamente? [s/n]").strip()
@@ -120,7 +123,7 @@ class Peer:
                 case 4:
                     ...
                 case 5:
-                    ...
+                    self.process_p2p_chat()
                 case 6:
                     self.process_manage_room()
     
@@ -147,7 +150,7 @@ class Peer:
 
         response = self.send_encrypted_request(requisition)
 
-        rooms_list = response.get("rooms-list")
+        rooms_list = response.get("room-list")
         
         print("========== Lista de salas ==========")
         if rooms_list:
@@ -184,6 +187,34 @@ class Peer:
             print(f"Erro durante a criação da sala: {str(e)}")
         
         input("Pressione qualquer tecla para retornar: ")
+
+    def process_p2p_chat(self):
+        requisition = {
+            "cmd": "p2p-chat"
+        }
+    
+        response = self.send_encrypted_request(requisition)
+        peers_to_connect = response.get("peer-list")
+        
+        print("Peers para se conectar: ")
+
+        if peers_to_connect != {}:
+            for peer in peers_to_connect:
+                print(peer)
+        else:
+            print("Não há nenhum usuário para se conectar no momento")
+
+        while True:
+            user_to_connect = input("Digite o nome do usuario para conectar ou /voltar para retornar: ").strip()
+
+            if user_to_connect != "/voltar":
+                return
+            
+            if user_to_connect in peers_to_connect:
+                ### implementar a logica de conexao peer to peer
+                ...
+            else:
+                print("Nome de usuário fornecido não se encontra na lista")
 
     def process_manage_room(self):
         """
@@ -275,7 +306,9 @@ class Peer:
             "user": user
         }
         
-        self.send_encrypted_request(requisition)
+        response = self.send_encrypted_request(requisition)
+
+        print(response.get("message"))
     
     def process_remove_member(self, room_name):
         """Remove um usuário da sala"""
@@ -290,7 +323,9 @@ class Peer:
             "user": user
         }
         
-        self.send_encrypted_request(requisition)
+        response = self.send_encrypted_request(requisition)
+
+        print(response.get("message"))
     
     def process_close_room(self, room_name):
         """Fecha permanentemente a sala"""
@@ -304,8 +339,11 @@ class Peer:
             "room-name": room_name
         }
         
-        self.send_encrypted_request(requisition)
-    
+        response = self.send_encrypted_request(requisition)
+
+        print(response.get("message"))
+
+
     def send_encrypted_request(self, requisition):
         """Helper para enviar requisições criptografadas"""
         encrypted = encrypt_with_public_key(
@@ -317,6 +355,20 @@ class Peer:
         response = json.loads(data)
         
         return response
+    
+    def send_heartbeat(self, interval=30):
+        while True:
+            try:
+                requisition = {
+                    "cmd": "heartbeat"
+                }
+
+                self.send_encrypted_request(requisition)
+            except Exception as e:
+                ...
+            
+            time.sleep(interval)
+
         
 if __name__ == "__main__":
     peer = Peer()

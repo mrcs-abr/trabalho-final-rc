@@ -1,4 +1,4 @@
-import threading, json, os
+import threading, json, os, time
 from utils.encrypt_utils import hash_password
 
 USER_DATA_FILE = "data_storage/users.json"
@@ -45,6 +45,7 @@ class User_manager:
             self.active_peers[user] = {
                 "peer-ip": peer_ip,
                 "peer-port": peer_port,
+                "last-seen": time.time()
             }
         
         return {"status": "ok", "message": "Login bem-sucedido", "usr": user}
@@ -58,6 +59,20 @@ class User_manager:
         with self.active_peers_lock:
             peer_list = list(self.active_peers.keys())
             return {"status": "ok", "peer-list": peer_list}
+    
+    def list_peers_to_connect(self, user):
+        with self.active_peers_lock:
+            peers_to_connect = self.active_peers.copy()
+            
+            if user in peers_to_connect:
+                del peers_to_connect[user]
+                return {"status": "ok", "peer-list": peers_to_connect}
+    
+    def update_heartbeat(self, user):
+        with self.active_peers_lock:
+            if user in self.active_peers:
+                self.active_peers[user]["last-seen"] = time.time()
+                return {"status": "ok", "message": "heartbeat recebido"}
     
     def user_exists(self, user):
         with self.users_lock:
