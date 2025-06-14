@@ -1,4 +1,4 @@
-import socket, json, time, threading
+import socket, json, time, threading, os
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Peer:
@@ -22,6 +22,7 @@ class Peer:
 
     def start(self):
         while True:
+            self.clear_terminal()
             print("========== Tela inicial Chatp2p ==========")
             print("Escolha uma opção: ")
             print("[1] Login")
@@ -34,7 +35,6 @@ class Peer:
                     break
                 except:
                     print("Opção inválida")
-                    option = int(input("->"))
                     continue
             
             match option:
@@ -48,6 +48,7 @@ class Peer:
     
     def process_login(self):
         while True:
+            self.clear_terminal()
             print("========== Login ==========")
             user = input("Digite seu usuario: ").strip()
             input_password = input("Digite sua senha: ").strip()
@@ -74,6 +75,7 @@ class Peer:
 
     def process_register(self):
         while True:
+            self.clear_terminal()
             print("========== Registro de usuario ==========")
             user = input("Digite um nome de usuario: ").strip()
             input_password = input("Digite uma senha: ").strip()
@@ -97,6 +99,7 @@ class Peer:
 
     def process_chat_functions(self):
         while True:
+            self.clear_terminal()
             print("========== Chatp2p ==========")
             print("Escolha uma opção: ")
             print("[1] Listar usuarios ativos")
@@ -110,7 +113,6 @@ class Peer:
                 option = int(input("->"))
             except:
                 print("Opção inválida")
-                option = int(input("->"))
                 continue
             
             match option:
@@ -123,7 +125,7 @@ class Peer:
                 case 4:
                     ...
                 case 5:
-                    self.process_p2p_chat()
+                    ...
                 case 6:
                     self.process_manage_room()
     
@@ -133,11 +135,10 @@ class Peer:
         }
 
         response = self.send_encrypted_request(requisition)
-
         users_list = response.get("peer-list")
         
+        self.clear_terminal()
         print("========== Lista de usuários ativos ==========")
-
         for user in users_list:
             print(f"Usuario: {user}")
 
@@ -149,9 +150,9 @@ class Peer:
         }
 
         response = self.send_encrypted_request(requisition)
-
         rooms_list = response.get("room-list")
         
+        self.clear_terminal()
         print("========== Lista de salas ==========")
         if rooms_list:
             for room in rooms_list:
@@ -161,7 +162,8 @@ class Peer:
 
         input("pressione qualquer tecla para retornar: ")
     
-    def process_create_room(self):        
+    def process_create_room(self): 
+        self.clear_terminal()       
         print("========== Criar Sala ==========")
         room_name = input("Digite o nome da sala: ").strip()
         
@@ -188,38 +190,11 @@ class Peer:
         
         input("Pressione qualquer tecla para retornar: ")
 
-    def process_p2p_chat(self):
-        requisition = {
-            "cmd": "p2p-chat"
-        }
-    
-        response = self.send_encrypted_request(requisition)
-        peers_to_connect = response.get("peer-list")
-        
-        print("Peers para se conectar: ")
-
-        if peers_to_connect != {}:
-            for peer in peers_to_connect:
-                print(peer)
-        else:
-            print("Não há nenhum usuário para se conectar no momento")
-
-        while True:
-            user_to_connect = input("Digite o nome do usuario para conectar ou /voltar para retornar: ").strip()
-
-            if user_to_connect != "/voltar":
-                return
-            
-            if user_to_connect in peers_to_connect:
-                ### implementar a logica de conexao peer to peer
-                ...
-            else:
-                print("Nome de usuário fornecido não se encontra na lista")
-
     def process_manage_room(self):
         """
         Menu de moderação para criadores de sala
         """
+        self.clear_terminal()
         print("========== Gerenciar Sala ==========")
         requisition = {
             "cmd": "list-my-rooms"
@@ -248,6 +223,7 @@ class Peer:
         
         # Menu de moderação
         while True:
+            self.clear_terminal()
             print(f"\n========== Gerenciando Sala: {room_name} ==========")
             print("[1] Listar membros")
             print("[2] Adicionar membro")
@@ -284,9 +260,9 @@ class Peer:
         }
         
         response = self.send_encrypted_request(requisition)
-
         members = response.get("members")
 
+        self.clear_terminal()
         print(f"========== Usuários com acesso a sala <{room_name}> ==========")
         for member in members:
             print(member)
@@ -295,6 +271,7 @@ class Peer:
     
     def process_add_member(self, room_name):
         """Adiciona um usuário à sala"""
+        self.clear_terminal()
         user = input("Digite o nome do usuário para adicionar: ").strip()
         if not user:
             print("Nome inválido")
@@ -309,9 +286,11 @@ class Peer:
         response = self.send_encrypted_request(requisition)
 
         print(response.get("message"))
+        input("Pressione qualquer tecla para retornar...")
     
     def process_remove_member(self, room_name):
         """Remove um usuário da sala"""
+        self.clear_terminal()
         user = input("Digite o nome do usuário para remover: ").strip()
         if not user:
             print("Nome inválido")
@@ -326,6 +305,7 @@ class Peer:
         response = self.send_encrypted_request(requisition)
 
         print(response.get("message"))
+        input("Pressione qualquer tecla para retornar...")
     
     def process_close_room(self, room_name):
         """Fecha permanentemente a sala"""
@@ -368,6 +348,12 @@ class Peer:
                 ...
             
             time.sleep(interval)
+
+    def clear_terminal(self):
+        if os.name == 'nt':
+            os.system('cls')
+        else:
+            os.system("clear")
 
         
 if __name__ == "__main__":
