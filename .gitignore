@@ -109,7 +109,8 @@ venv/
 /trabalho-rc/lib/
 /trabalho-rc/include/
 /trabalho-rc/pyvenv.cfg
-/trabalho-rc/data_storage/
+/trabalho-rc/data_storage/*
+!/trabalho-rc/data_storage/.gitkeep
 ENV/
 env.bak/
 venv.bak/
