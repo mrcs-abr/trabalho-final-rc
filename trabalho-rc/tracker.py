@@ -84,10 +84,6 @@ class Tracker:
                             if user:
                                 response = self.room_manager.close_room(peer_requisition["room-name"], user)
                         
-                        case "p2p-chat":
-                            if user:
-                                response = self.user_manager.list_peers_to_connect(user)
-                        
                         case "heartbeat":
                             if user:
                                 response = self.user_manager.update_heartbeat(user)

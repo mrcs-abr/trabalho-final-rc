@@ -8,9 +8,10 @@ class Peer:
         self.tracker_info = (tracker_host, tracker_port)
         self.peer_listen_port = peer_listen_port
         self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.peer_socket_lock = threading.Lock()
         self.private_key, self.public_key = generate_rsa_keys()
         self.public_key_str = serialize_public_key(self.public_key)
-        
+  
         try:
             self.peer_socket.connect(self.tracker_info)
         except socket.error as e:
@@ -58,8 +59,7 @@ class Peer:
                 "password": input_password,
             }
 
-            response = self.send_encrypted_request(requisition)
-            print(response)
+            response = self.send_and_recv_encrypted_request(requisition)
 
             if response.get("status") == "ok":
                 print(response.get("message"))
@@ -87,7 +87,7 @@ class Peer:
                     "password": input_password,
                 }
 
-                response = self.send_encrypted_request(requisition)
+                response = self.send_and_recv_encrypted_request(requisition)
 
                 if response.get("status") == "ok":
                     break
@@ -134,7 +134,7 @@ class Peer:
             "cmd": "list-peers"
         }
 
-        response = self.send_encrypted_request(requisition)
+        response = self.send_and_recv_encrypted_request(requisition)
         users_list = response.get("peer-list")
         
         self.clear_terminal()
@@ -149,7 +149,7 @@ class Peer:
             "cmd": "list-rooms"
         }
 
-        response = self.send_encrypted_request(requisition)
+        response = self.send_and_recv_encrypted_request(requisition)
         rooms_list = response.get("room-list")
         
         self.clear_terminal()
@@ -178,7 +178,7 @@ class Peer:
         }
         
         try:
-            response = self.send_encrypted_request(requisition)
+            response = self.send_and_recv_encrypted_request(requisition)
             
             if response.get("status") == "ok":
                 print(f"Sala '{room_name}' criada com sucesso!")
@@ -200,8 +200,8 @@ class Peer:
             "cmd": "list-my-rooms"
         }
         
-        response = self.send_encrypted_request(requisition)
-        
+        response = self.send_and_recv_encrypted_request(requisition)
+
         if response.get("status") != "ok" or not response.get("rooms"):
             print("Você não é moderador de nenhuma sala")
             input("Pressione qualquer tecla para voltar...")
@@ -251,6 +251,9 @@ class Peer:
                     return
                 case _:
                     print("Opção inválida")
+    
+    def process_join_room(self):
+        ...
 
     def process_list_room_members(self, room_name):
         """Lista todos os membros de uma sala"""
@@ -259,7 +262,7 @@ class Peer:
             "room-name": room_name
         }
         
-        response = self.send_encrypted_request(requisition)
+        response = self.send_and_recv_encrypted_request(requisition)
         members = response.get("members")
 
         self.clear_terminal()
@@ -283,7 +286,7 @@ class Peer:
             "user": user
         }
         
-        response = self.send_encrypted_request(requisition)
+        response = self.send_and_recv_encrypted_request(requisition)
 
         print(response.get("message"))
         input("Pressione qualquer tecla para retornar...")
@@ -302,7 +305,7 @@ class Peer:
             "user": user
         }
         
-        response = self.send_encrypted_request(requisition)
+        response = self.send_and_recv_encrypted_request(requisition)
 
         print(response.get("message"))
         input("Pressione qualquer tecla para retornar...")
@@ -319,23 +322,23 @@ class Peer:
             "room-name": room_name
         }
         
-        response = self.send_encrypted_request(requisition)
+        response = self.send_and_recv_encrypted_request(requisition)
 
         print(response.get("message"))
 
-
-    def send_encrypted_request(self, requisition):
+    def send_and_recv_encrypted_request(self, requisition):
         """Helper para enviar requisições criptografadas"""
         encrypted = encrypt_with_public_key(
             self.tracker_public_key, json.dumps(requisition))
-        self.peer_socket.send(encrypted.encode())
         
-        encrypted_data = self.peer_socket.recv(4096).decode()
+        with self.peer_socket_lock:
+            self.peer_socket.send(encrypted.encode())    
+            encrypted_data = self.peer_socket.recv(4096).decode()
+        
         data = decrypt_with_private_key(self.private_key, encrypted_data)
-        response = json.loads(data)
+            
+        return json.loads(data)
         
-        return response
-    
     def send_heartbeat(self, interval=30):
         while True:
             try:
@@ -343,7 +346,7 @@ class Peer:
                     "cmd": "heartbeat"
                 }
 
-                self.send_encrypted_request(requisition)
+                self.send_and_recv_encrypted_request(requisition)
             except Exception as e:
                 ...
             
