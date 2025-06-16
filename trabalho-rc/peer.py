@@ -1,25 +1,36 @@
-import socket, json, time, threading, os
+import socket, json, time, threading, os, sys
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Peer:
-    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_listen_port=5500):
+    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_host= "0.0.0.0", peer_listen_port=5502, max_conec=5):
+        # Configura conexao com tracker
         self.tracker_host = tracker_host
         self.tracker_port = tracker_port
         self.tracker_info = (tracker_host, tracker_port)
-        self.peer_listen_port = peer_listen_port
         self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.peer_socket_lock = threading.Lock()
         self.private_key, self.public_key = generate_rsa_keys()
         self.public_key_str = serialize_public_key(self.public_key)
+        self.peer_socket.bind(("", peer_listen_port))
   
         try:
             self.peer_socket.connect(self.tracker_info)
         except socket.error as e:
             print(f"Erro ao conectar ao tracker: {e}")
 
+        # Troca chaves com tracker
         self.tracker_public_key = deserialize_public_key(
             json.loads(self.peer_socket.recv(4096).decode())["public_key"])
         self.peer_socket.send(json.dumps({"public_key": self.public_key_str}).encode())
+
+        # Configura conexao com peers
+        self.peer_host = peer_host
+        self.peer_listen_port = peer_listen_port
+        self.peer_info = (peer_host, peer_listen_port)
+        self.peer_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.peer_server_socket.listen(max_conec)
+        self.peer_server_socket_lock = threading.Lock()
+        
 
     def start(self):
         while True:
@@ -125,7 +136,7 @@ class Peer:
                 case 4:
                     ...
                 case 5:
-                    ...
+                    self.process_peer_chat()
                 case 6:
                     self.process_manage_room()
     
@@ -189,6 +200,38 @@ class Peer:
             print(f"Erro durante a criação da sala: {str(e)}")
         
         input("Pressione qualquer tecla para retornar: ")
+    
+    def process_peer_chat(self):
+        requisition = {"cmd": "list-peers"}
+        response = self.send_and_recv_encrypted_request(requisition)
+
+        self.clear_terminal()
+        print("========== Iniciar chat privado ==========")
+        
+        if response.get("status") != "ok" or not response.get("peer-list"):
+            print("Não há outros usuários ativos no momento.")
+            input("Pressione qualquer tecla para retornar")
+            return
+        
+        users_list = response.get("peer-list")
+        print("Selecione um usuário para conversar: ")
+        for i, user in enumerate(users_list, 1):
+            print(f"[{i}] {user}")
+        
+        while True:
+            try:
+                option = int(input("->"))
+                if not 1 <= option <= len(users_list):
+                    raise ValueError
+                
+                user_to_connect = users_list[option - 1]
+                break
+            except:
+                print("Opção inválida, tente novamente")
+        
+        requisition = {"cmd": "get-peer-addr", "user-to-connect": user_to_connect}
+        response = self.send_and_recv_encrypted_request(requisition)
+        # implementando
 
     def process_manage_room(self):
         """
@@ -238,23 +281,15 @@ class Peer:
                 continue
             
             match option:
-                case 1:
-                    self.process_list_room_members(room_name)
-                case 2:
-                    self.process_add_member(room_name)
-                case 3:
-                    self.process_remove_member(room_name)
+                case 1: self.process_list_room_members(room_name)
+                case 2: self.process_add_member(room_name)
+                case 3: self.process_remove_member(room_name)
                 case 4:
                     self.process_close_room(room_name)
                     return  # Sai do menu após fechar a sala
-                case 0:
-                    return
-                case _:
-                    print("Opção inválida")
-    
-    def process_join_room(self):
-        ...
-
+                case 0: return
+                case _: print("Opção inválida")
+        
     def process_list_room_members(self, room_name):
         """Lista todos os membros de uma sala"""
         requisition = {
@@ -330,14 +365,23 @@ class Peer:
         """Helper para enviar requisições criptografadas"""
         encrypted = encrypt_with_public_key(
             self.tracker_public_key, json.dumps(requisition))
-        
-        with self.peer_socket_lock:
-            self.peer_socket.send(encrypted.encode())    
-            encrypted_data = self.peer_socket.recv(4096).decode()
-        
-        data = decrypt_with_private_key(self.private_key, encrypted_data)
+        try:
+            with self.peer_socket_lock:
+                self.peer_socket.send(encrypted.encode())    
+                encrypted_data = self.peer_socket.recv(4096).decode()
+
+                if not encrypted_data:
+                    raise ConnectionResetError("Conexao fechada pelo servidor")
             
-        return json.loads(data)
+            data = decrypt_with_private_key(self.private_key, encrypted_data)
+                
+            return json.loads(data)
+        except Exception as e:
+            print("A conexão com o servidor foi perdida")
+            print(f"Erro: {e}")
+            print("Encerrando cliente")
+            sys.exit()
+
         
     def send_heartbeat(self, interval=30):
         while True:
@@ -348,7 +392,7 @@ class Peer:
 
                 self.send_and_recv_encrypted_request(requisition)
             except Exception as e:
-                ...
+                pass
             
             time.sleep(interval)
 

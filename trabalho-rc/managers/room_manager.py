@@ -45,6 +45,19 @@ class Room_manager:
             self.save_rooms()
             return {"status": "ok", "message": f"Sala '{room_name}' criada com sucesso"}
     
+    def join_room(self, room_to_join, user):
+        with self.lock:
+            if room_to_join not in self.chat_rooms:
+                return {"status": "error", "message": "Sala não encontrada"}
+            
+            if user not in self.chat_rooms[room_to_join]["members"]:
+                return {"status": "error", "message": f"Você não é membro desta sala, peça ao moderador <{self.chat_rooms[room_to_join]['moderator']}> para te adicionar."}
+            else:
+                self.chat_rooms[room_to_join]["members"].append(user)
+                self.save_rooms()
+                return {"status": "ok", "message": f"O usuário {user} entrou na sala"}
+
+    
     def list_my_rooms(self, user):
         with self.lock:
             my_rooms = [

@@ -55,10 +55,18 @@ class User_manager:
             if user in self.active_peers:
                 del self.active_peers[user]
     
-    def list_active_peers(self):
+    def list_active_peers(self, requesting_user):
         with self.active_peers_lock:
-            peer_list = list(self.active_peers.keys())
+            peer_list = [peer for peer in self.active_peers.keys() if peer != requesting_user]
             return {"status": "ok", "peer-list": peer_list}
+    
+    def get_peer_addr(self, user_to_connect):
+        with self.active_peers_lock:
+            if user_to_connect in self.active_peers:
+                user_info = self.active_peers[user_to_connect]
+                return {"status": "ok", "user-ip": user_info["peer-ip"], "user-port": user_info["peer-port"]}
+            else:
+                return {"status": "error", "message": "Usuário não está ativo ou não existe"}
     
     def list_peers_to_connect(self, user):
         with self.active_peers_lock:

@@ -54,7 +54,11 @@ class Tracker:
                         
                         case "list-peers":
                             if user:
-                                response = self.user_manager.list_active_peers()
+                                response = self.user_manager.list_active_peers(user)
+                        
+                        case "get-peer-addr":
+                            if user:
+                                response = self.user_manager.get_peer_addr(peer_requisition["user-to-connect"])
 
                         case "list-rooms":
                             if user:
@@ -63,6 +67,10 @@ class Tracker:
                         case "create-room":
                             if user:
                                 response = self.room_manager.create_room(peer_requisition["room-name"], user)
+                        
+                        case "join-room":
+                            if user:
+                                response = self.room_manager.join_room(peer_requisition["room-to-join"], user)
                         
                         case "list-my-rooms":
                             if user:
