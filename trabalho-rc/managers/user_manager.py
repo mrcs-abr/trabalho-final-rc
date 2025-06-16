@@ -35,8 +35,8 @@ class User_manager:
             self.save_users()
             return {"status": "ok", "message": "Usuário registrado com sucesso!"}
     
-    def login(self, user, password, address):
-        peer_ip, peer_port = address
+    def login(self, user, password, address, peer_server_port, peer_public_key):
+        peer_ip, _ = address
         with self.users_lock:
             if user not in self.users or self.users[user]["password"] != hash_password(password):
                 return {"status": "error", "message": "Usuário ou senha incorretos"}
@@ -44,8 +44,9 @@ class User_manager:
         with self.active_peers_lock:
             self.active_peers[user] = {
                 "peer-ip": peer_ip,
-                "peer-port": peer_port,
-                "last-seen": time.time()
+                "peer-port": peer_server_port,
+                "last-seen": time.time(),
+                "peer-public-key": peer_public_key
             }
         
         return {"status": "ok", "message": "Login bem-sucedido", "usr": user}
@@ -67,6 +68,15 @@ class User_manager:
                 return {"status": "ok", "user-ip": user_info["peer-ip"], "user-port": user_info["peer-port"]}
             else:
                 return {"status": "error", "message": "Usuário não está ativo ou não existe"}
+    
+    def get_peer_public_key(self, user_to_connect):
+        with self.active_peers_lock:
+            if user_to_connect in self.active_peers:
+                user_info = self.active_peers[user_to_connect]
+                return {"status": "ok", "peer-public-key": user_info["peer-public-key"]}
+            else:
+                return {"status": "error", "message": "Usuário não está ativo ou não existe"}
+    
     
     def list_peers_to_connect(self, user):
         with self.active_peers_lock:

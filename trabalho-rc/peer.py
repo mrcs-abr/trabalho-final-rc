@@ -2,7 +2,7 @@ import socket, json, time, threading, os, sys
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Peer:
-    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_host= "0.0.0.0", peer_listen_port=5502, max_conec=5):
+    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_host= "0.0.0.0", peer_listen_port=5555, max_conec=5):
         # Configura conexao com tracker
         self.tracker_host = tracker_host
         self.tracker_port = tracker_port
@@ -11,7 +11,6 @@ class Peer:
         self.peer_socket_lock = threading.Lock()
         self.private_key, self.public_key = generate_rsa_keys()
         self.public_key_str = serialize_public_key(self.public_key)
-        self.peer_socket.bind(("", peer_listen_port))
   
         try:
             self.peer_socket.connect(self.tracker_info)
@@ -28,8 +27,16 @@ class Peer:
         self.peer_listen_port = peer_listen_port
         self.peer_info = (peer_host, peer_listen_port)
         self.peer_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.peer_server_socket.bind(self.peer_info)
         self.peer_server_socket.listen(max_conec)
         self.peer_server_socket_lock = threading.Lock()
+    
+    
+    def peer_listen(self):
+        while True:
+            user_connec, addr = self.peer_server_socket.accept()
+            print(f"Nova conexao de: {str(addr)}")
+            threading.Thread(target=self.process_new_peer_connec, args=(user_connec, addr)).start()
         
 
     def start(self):
@@ -68,6 +75,7 @@ class Peer:
                 "cmd": "login", 
                 "usr": user, 
                 "password": input_password,
+                "peer-listen-port": self.peer_listen_port,
             }
 
             response = self.send_and_recv_encrypted_request(requisition)
@@ -79,7 +87,7 @@ class Peer:
                 break
             else:
                 print(response.get("message"))
-                option = input("Deseja tentar novamente? [s/n]").strip()
+                option = input("Deseja tentar novamente? [s/n]: ").strip()
 
                 if option == "n":
                     break
@@ -231,7 +239,46 @@ class Peer:
         
         requisition = {"cmd": "get-peer-addr", "user-to-connect": user_to_connect}
         response = self.send_and_recv_encrypted_request(requisition)
-        # implementando
+        
+        if response.get("status") == "ok":
+            user_to_connect_ip = response.get("user-ip")
+            user_to_connect_port = response.get("user-port")
+        
+        # Peer public key requisition
+        requisition = {"cmd": "get-peer-key", "peer-public-key": user_to_connect}
+        encrypted = encrypt_with_public_key(
+            self.tracker_public_key, json.dumps(requisition))
+        try:
+            with self.peer_socket_lock:
+                self.peer_socket.send(encrypted.encode())    
+                data = self.peer_socket.recv(4096).decode()
+                if not data:
+                    raise ConnectionResetError("Erro de conexão!")
+                response_key = json.loads(data)
+        except Exception as e:
+            print("A conexão com o servidor foi perdida!")
+            print(f"Erro: {e}")
+            print("Encerrando cliente...")
+            sys.exit()
+
+        if response_key.get("status") == "ok":
+            user_to_connect_public_key_str = response_key.get("peer-public-key")
+            user_to_connect_public_key = deserialize_public_key(user_to_connect_public_key_str)
+        
+        chat_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            chat_socket.connect((user_to_connect_ip, user_to_connect_port))
+        except socket.error as e:
+            print(f"Erro ao conectar {user_to_connect}")
+            print(f"erro : {e}")
+        
+        input("Até aqui")
+
+    
+    def process_new_peer_connec(self, user_connec, addr):
+        ...
+
+
 
     def process_manage_room(self):
         """
@@ -371,15 +418,15 @@ class Peer:
                 encrypted_data = self.peer_socket.recv(4096).decode()
 
                 if not encrypted_data:
-                    raise ConnectionResetError("Conexao fechada pelo servidor")
+                    raise ConnectionResetError("Erro de conexão!")
             
             data = decrypt_with_private_key(self.private_key, encrypted_data)
                 
             return json.loads(data)
         except Exception as e:
-            print("A conexão com o servidor foi perdida")
+            print("A conexão com o servidor foi perdida!")
             print(f"Erro: {e}")
-            print("Encerrando cliente")
+            print("Encerrando cliente...")
             sys.exit()
 
         
@@ -405,4 +452,5 @@ class Peer:
         
 if __name__ == "__main__":
     peer = Peer()
+    threading.Thread(target=peer.peer_listen, daemon=True).start()
     peer.start()

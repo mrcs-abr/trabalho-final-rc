@@ -1,5 +1,4 @@
 import socket, json, threading
-from threading import Thread
 from managers.user_manager import User_manager
 from managers.room_manager import Room_manager
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
@@ -26,7 +25,7 @@ class Tracker:
         while True:
             peer_conec, address = self.server.accept()
             print("Conexao de: " + str(address))
-            Thread(target=self.process_new_peer, args=(peer_conec, address)).start()
+            threading.Thread(target=self.process_new_peer, args=(peer_conec, address)).start()
 
     def process_new_peer(self, peer_conec, address):
             user = None
@@ -45,7 +44,11 @@ class Tracker:
                     
                     match cmd:
                         case "login":
-                            response = self.user_manager.login(peer_requisition["usr"], peer_requisition["password"], address)
+                            response = self.user_manager.login(peer_requisition["usr"], 
+                                                               peer_requisition["password"], 
+                                                               address,
+                                                               peer_requisition["peer-listen-port"],
+                                                               peer_public_key_str)
                             if response.get("status") == "ok":
                                 user = response.get("usr")
 
@@ -59,6 +62,12 @@ class Tracker:
                         case "get-peer-addr":
                             if user:
                                 response = self.user_manager.get_peer_addr(peer_requisition["user-to-connect"])
+                        
+                        case "get-peer-key":
+                            if user:
+                                response = self.user_manager.get_peer_public_key(peer_requisition["peer-public-key"])
+                                peer_conec.send(json.dumps(response).encode())
+                                break
 
                         case "list-rooms":
                             if user:
@@ -99,6 +108,7 @@ class Tracker:
 
                         case _:
                             response = {"status": "error", "message": "Comando inválido"}
+                        
 
                     print(response)
                     encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
