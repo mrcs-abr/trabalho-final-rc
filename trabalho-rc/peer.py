@@ -2,7 +2,7 @@ import socket, json, time, threading, os, sys
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Peer:
-    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_host= "0.0.0.0", peer_listen_port=5560, max_conec=5):
+    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_host= "0.0.0.0", peer_listen_port=5565, max_conec=5):
         # Configura conexao com tracker
         self.tracker_host = tracker_host
         self.tracker_port = tracker_port
@@ -29,6 +29,7 @@ class Peer:
         self.peer_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.peer_server_socket.bind(self.peer_info)
         self.peer_server_socket.listen(max_conec)
+        self.peer_listen_port = self.peer_server_socket.getsockname()[1]
         self.peer_server_socket_lock = threading.Lock()
         self.peer_connection_lock = threading.Lock()
         self.username = None
@@ -445,7 +446,6 @@ class Peer:
         print("\nChat encerrado.")
         conn.close()
         self.chatting = False
-        input("Pressione Enter para continuar...")
         self.clean_pending_requests()
 
     def process_pending_chats(self):
@@ -514,7 +514,11 @@ class Peer:
                 if reject:
                     try:
                         response = {"type": "refuse"}
-                        request['conn'].send(json.dumps(response).encode())
+                        requester_public_key = request['public_key']
+                        encrypted_response = encrypt_with_public_key(
+                            requester_public_key, json.dumps(response)
+                        )
+                        request['conn'].send(encrypted_response.encode())
                     except socket.error:
                         pass
                 request['conn'].close()
@@ -687,5 +691,5 @@ class Peer:
 
         
 if __name__ == "__main__":
-    peer = Peer()
+    peer = Peer(peer_listen_port=0)
     peer.start()
