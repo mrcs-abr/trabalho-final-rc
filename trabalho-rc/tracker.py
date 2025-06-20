@@ -48,7 +48,9 @@ class Tracker:
                                                                peer_requisition["password"], 
                                                                address,
                                                                peer_requisition["peer-listen-port"],
-                                                               peer_public_key_str)
+                                                               peer_public_key_str,
+                                                               peer_conec)
+                                                               
                             if response.get("status") == "ok":
                                 user = response.get("usr")
 
@@ -117,8 +119,8 @@ class Tracker:
             except (ConnectionResetError, json.JSONDecodeError, ValueError) as e:
                 print(f"Erro de conexão com peer {str(address)}: {str(e)}")
                 self.user_manager.logout(user)
-                print(f"Peer {user} desconectado.")
-                peer_conec.close()
+                # print(f"Peer {user} desconectado.")
+                #peer_conec.close()
     
 if __name__ == "__main__":
     tracker = Tracker()

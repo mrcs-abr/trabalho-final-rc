@@ -9,6 +9,7 @@ class User_manager:
         self.active_peers = {}
         self.users_lock = threading.Lock()
         self.active_peers_lock = threading.Lock()
+        threading.Thread(target=self.monitor_users,daemon=True).start()
     
     def load_users(self):
         if os.path.exists(USER_DATA_FILE):
@@ -35,7 +36,7 @@ class User_manager:
             self.save_users()
             return {"status": "ok", "message": "Usuário registrado com sucesso!"}
     
-    def login(self, user, password, address, peer_server_port, peer_public_key):
+    def login(self, user, password, address, peer_server_port, peer_public_key, peer_conec):
         peer_ip, _ = address
         with self.users_lock:
             if user not in self.users or self.users[user]["password"] != hash_password(password):
@@ -46,7 +47,8 @@ class User_manager:
                 "peer-ip": peer_ip,
                 "peer-port": peer_server_port,
                 "last-seen": time.time(),
-                "peer-public-key": peer_public_key
+                "peer-public-key": peer_public_key,
+                "peer-conec": peer_conec
             }
         
         return {"status": "ok", "message": "Login bem-sucedido", "usr": user}
@@ -54,7 +56,13 @@ class User_manager:
     def logout(self, user):
         with self.active_peers_lock:
             if user in self.active_peers:
-                del self.active_peers[user]
+                try:
+                    self.active_peers[user]["peer-conec"].close()
+                except Exception as e:
+                    print(f"Erro ao fechar conexao para {user}")
+                finally:
+                    del self.active_peers[user]
+                    print(f"Usuário {user} desconectado")
     
     def list_active_peers(self, requesting_user):
         with self.active_peers_lock:
@@ -90,7 +98,24 @@ class User_manager:
         with self.active_peers_lock:
             if user in self.active_peers:
                 self.active_peers[user]["last-seen"] = time.time()
-                return {"status": "ok", "message": "heartbeat recebido"}
+                return {"status": "ok", "message": f"heartbeat recebido de {user}"}
+    
+    def monitor_users(self):
+
+        while True:
+            time.sleep(10)
+            now = time.time()
+
+            inactive_users = []
+
+            with self.active_peers_lock:
+                for username, user in self.active_peers.items():
+                    if now - user["last-seen"] > 90:
+                        inactive_users.append(username)
+            
+            if inactive_users:
+                for user in inactive_users:
+                    self.logout(user)
     
     def user_exists(self, user):
         with self.users_lock:

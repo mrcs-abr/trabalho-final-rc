@@ -113,7 +113,6 @@ class Peer:
                 }
 
                 response = self.send_and_recv_encrypted_request(requisition)
-
                 if response.get("status") == "ok":
                     break
                 else:
@@ -137,10 +136,10 @@ class Peer:
                     print("*******************************************************")
             print("Escolha uma opção: ")
             print("[1] Listar usuarios ativos")
-            print("[2] Listar salas disponiveis")
-            print("[3] Criar sala")
-            print("[4] Entrar em uma sala")
-            print("[5] Iniciar chat privado")
+            print("[2] Iniciar chat privado")
+            print("[3] Listar salas disponiveis")
+            print("[4] Criar sala")
+            print("[5] Entrar em uma sala")
             print("[6] Gerenciar sala (se moderador)")
             print("[7] Ver pedidos de chat")
             
@@ -152,11 +151,11 @@ class Peer:
             
             match option:
                 case 1: self.process_list_peers()
-                case 2: self.process_list_rooms()
-                case 3: self.process_create_room()
-                case 4:
+                case 2: self.process_peer_chat_client()
+                case 3: self.process_list_rooms()
+                case 4: self.process_create_room()
+                case 5:
                     ...
-                case 5: self.process_peer_chat_client()
                 case 6: self.process_manage_room()
                 case 7: self.process_pending_chats()
     
@@ -175,52 +174,6 @@ class Peer:
 
         input("pressione qualquer tecla para retornar: ")
     
-    def process_list_rooms(self):
-        requisition = {
-            "cmd": "list-rooms"
-        }
-
-        response = self.send_and_recv_encrypted_request(requisition)
-        rooms_list = response.get("room-list")
-        
-        self.clear_terminal()
-        print("========== Lista de salas ==========")
-        if rooms_list:
-            for room in rooms_list:
-                print(f"Sala: {room}")
-        else:
-            print("Não há nenhuma sala disponível no momento")
-
-        input("pressione qualquer tecla para retornar: ")
-    
-    def process_create_room(self): 
-        self.clear_terminal()       
-        print("========== Criar Sala ==========")
-        room_name = input("Digite o nome da sala: ").strip()
-        
-        if not room_name:
-            print("Nome da sala não pode ser vazio!")
-            return
-        
-        requisition = {
-            "cmd": "create-room",
-            "room-name": room_name,
-            "creator": None  # Será preenchido pelo tracker com o usuário logado
-        }
-        
-        try:
-            response = self.send_and_recv_encrypted_request(requisition)
-            
-            if response.get("status") == "ok":
-                print(f"Sala '{room_name}' criada com sucesso!")
-            else:
-                print(f"Erro ao criar sala: {response.get('message')}")
-        
-        except Exception as e:
-            print(f"Erro durante a criação da sala: {str(e)}")
-        
-        input("Pressione qualquer tecla para retornar: ")
-    
     def process_peer_chat_client(self):
         requisition = {"cmd": "list-peers"}
         response = self.send_and_recv_encrypted_request(requisition)
@@ -236,10 +189,13 @@ class Peer:
         print("Selecione um usuário para conversar: ")
         for i, user in enumerate(users_list, 1):
             print(f"[{i}] {user}")
+        print("[0] voltar")
         
         while True:
             try:
                 option = int(input("->"))
+                if option == 0:
+                    return
                 if not 1 <= option <= len(users_list):
                     raise ValueError
                 
@@ -374,15 +330,12 @@ class Peer:
         except (ConnectionResetError, json.JSONDecodeError, ValueError) as e:
             print(f"Erro de conexão com peer {str(addr)}: {str(e)}")
             user_connec.close()
-        
 
     def handle_peer_chat(self, conn, peer_public_key, peer_username):
         self.chatting = True
         self.clear_terminal()
-        print(f"Chat 1-1 com {peer_username} conectado e criptografado. Digite 'exit' para sair.")
-        
-        my_private_key = self.private_key
-        
+        print(f"Chat com {peer_username} iniciado. Digite '/sair' para sair.")
+    
         def receive_messages():
             while self.chatting:
                 try:
@@ -393,7 +346,7 @@ class Peer:
                         self.chatting = False
                         break
                     
-                    decrypted_message = decrypt_with_private_key(my_private_key, encrypted_message)
+                    decrypted_message = decrypt_with_private_key(self.private_key, encrypted_message)
                     data = json.loads(decrypted_message)
 
                     if data.get("type") == "exit":
@@ -402,7 +355,7 @@ class Peer:
                         break
                     
                     elif data.get("type") == "message":
-                        print(f"\r{peer_username}: {data['content']}\nVoce: ", end="")
+                        print(f"\r{peer_username}: {data['content']}\nEu: ", end="")
 
                 except (json.JSONDecodeError, ConnectionResetError, ValueError):
                     print(f"\n[AVISO] Conexão com {peer_username} perdida ou dados corrompidos.")
@@ -416,7 +369,7 @@ class Peer:
 
         while self.chatting:
             try:
-                message_text = input("Voce: ")
+                message_text = input("Eu: ")
 
                 if not self.chatting:
                     break
@@ -524,6 +477,51 @@ class Peer:
                 request['conn'].close()
             self.pending_chat_requests.clear()
 
+    def process_list_rooms(self):
+        requisition = {
+            "cmd": "list-rooms"
+        }
+
+        response = self.send_and_recv_encrypted_request(requisition)
+        rooms_list = response.get("room-list")
+        
+        self.clear_terminal()
+        print("========== Lista de salas ==========")
+        if rooms_list:
+            for room in rooms_list:
+                print(f"Sala: {room}")
+        else:
+            print("Não há nenhuma sala disponível no momento")
+
+        input("pressione qualquer tecla para retornar: ")
+    
+    def process_create_room(self): 
+        self.clear_terminal()       
+        print("========== Criar Sala ==========")
+        room_name = input("Digite o nome da sala: ").strip()
+        
+        if not room_name:
+            print("Nome da sala não pode ser vazio!")
+            return
+        
+        requisition = {
+            "cmd": "create-room",
+            "room-name": room_name,
+            "creator": None  # Será preenchido pelo tracker com o usuário logado
+        }
+        
+        try:
+            response = self.send_and_recv_encrypted_request(requisition)           
+            if response.get("status") == "ok":
+                print(f"Sala '{room_name}' criada com sucesso!")
+            else:
+                print(f"Erro ao criar sala: {response.get('message')}")
+        
+        except Exception as e:
+            print(f"Erro durante a criação da sala: {str(e)}")
+        
+        input("Pressione qualquer tecla para retornar: ")
+
     def process_manage_room(self):
         """
         Menu de moderação para criadores de sala
@@ -613,7 +611,6 @@ class Peer:
         }
         
         response = self.send_and_recv_encrypted_request(requisition)
-
         print(response.get("message"))
         input("Pressione qualquer tecla para retornar...")
     
@@ -632,7 +629,6 @@ class Peer:
         }
         
         response = self.send_and_recv_encrypted_request(requisition)
-
         print(response.get("message"))
         input("Pressione qualquer tecla para retornar...")
     
@@ -649,7 +645,6 @@ class Peer:
         }
         
         response = self.send_and_recv_encrypted_request(requisition)
-
         print(response.get("message"))
 
     def send_and_recv_encrypted_request(self, requisition):
@@ -689,7 +684,6 @@ class Peer:
         else:
             os.system("clear")
 
-        
 if __name__ == "__main__":
     peer = Peer(peer_listen_port=0)
     peer.start()

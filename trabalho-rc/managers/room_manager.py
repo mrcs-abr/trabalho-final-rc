@@ -53,7 +53,7 @@ class Room_manager:
             if user not in self.chat_rooms[room_to_join]["members"]:
                 return {"status": "error", "message": f"Você não é membro desta sala, peça ao moderador <{self.chat_rooms[room_to_join]['moderator']}> para te adicionar."}
             else:
-                self.chat_rooms[room_to_join]["members"].append(user)
+                self.chat_rooms[room_to_join]["in-room"].append(user)
                 self.save_rooms()
                 return {"status": "ok", "message": f"O usuário {user} entrou na sala"}
 
@@ -113,6 +113,8 @@ class Room_manager:
 
             if user_to_remove in room["members"]:
                 room["members"].remove(user_to_remove)
+                if user_to_remove in room["in-room"]:
+                    room["in-room"].remove(user_to_remove)
                 self.save_rooms()
                 return {"status": "ok", "message": f"Usuário {user_to_remove} removido da sala"}
             
