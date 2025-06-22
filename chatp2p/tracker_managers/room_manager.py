@@ -7,8 +7,6 @@ class Room_manager:
         self.chat_rooms = self.load_rooms()
         self.lock = threading.Lock()
 
-        threading.Thread(target=self.monitor_rooms,daemon=True).start()
-    
     def load_rooms(self):
         if os.path.exists(ROOM_DATA_FILE):
             try:
@@ -57,7 +55,6 @@ class Room_manager:
                 self.save_rooms()
                 return {"status": "ok", "message": f"O usuário {user} entrou na sala"}
 
-    
     def list_my_rooms(self, user):
         with self.lock:
             my_rooms = [

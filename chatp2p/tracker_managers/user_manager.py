@@ -9,7 +9,6 @@ class User_manager:
         self.active_peers = {}
         self.users_lock = threading.Lock()
         self.active_peers_lock = threading.Lock()
-        threading.Thread(target=self.monitor_users,daemon=True).start()
     
     def load_users(self):
         if os.path.exists(USER_DATA_FILE):
@@ -73,18 +72,9 @@ class User_manager:
         with self.active_peers_lock:
             if user_to_connect in self.active_peers:
                 user_info = self.active_peers[user_to_connect]
-                return {"status": "ok", "user-ip": user_info["peer-ip"], "user-port": user_info["peer-port"]}
+                return {"status": "ok", "user-ip": user_info["peer-ip"], "user-port": user_info["peer-port"], "peer-public-key": user_info["peer-public-key"]}
             else:
                 return {"status": "error", "message": "Usuário não está ativo ou não existe"}
-    
-    def get_peer_public_key(self, user_to_connect):
-        with self.active_peers_lock:
-            if user_to_connect in self.active_peers:
-                user_info = self.active_peers[user_to_connect]
-                return {"status": "ok", "peer-public-key": user_info["peer-public-key"]}
-            else:
-                return {"status": "error", "message": "Usuário não está ativo ou não existe"}
-    
     
     def list_peers_to_connect(self, user):
         with self.active_peers_lock:
@@ -93,7 +83,7 @@ class User_manager:
             if user in peers_to_connect:
                 del peers_to_connect[user]
                 return {"status": "ok", "peer-list": peers_to_connect}
-    
+
     def update_heartbeat(self, user):
         with self.active_peers_lock:
             if user in self.active_peers:
@@ -101,7 +91,6 @@ class User_manager:
                 return {"status": "ok", "message": f"heartbeat recebido de {user}"}
     
     def monitor_users(self):
-
         while True:
             time.sleep(10)
             now = time.time()
@@ -117,6 +106,3 @@ class User_manager:
                 for user in inactive_users:
                     self.logout(user)
     
-    def user_exists(self, user):
-        with self.users_lock:
-            return user in self.users

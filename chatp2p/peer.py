@@ -1,26 +1,13 @@
 import socket, json, time, threading, os, sys
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
+from peer_managers.tracker_connection_manager import Tracker_connection_manager
 
 class Peer:
-    def __init__(self, tracker_host="localhost", tracker_port=6000, peer_host= "0.0.0.0", peer_listen_port=5565, max_conec=5):
-        # Configura conexao com tracker
-        self.tracker_host = tracker_host
-        self.tracker_port = tracker_port
-        self.tracker_info = (tracker_host, tracker_port)
-        self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.peer_socket_lock = threading.Lock()
-        self.private_key, self.public_key = generate_rsa_keys()
-        self.public_key_str = serialize_public_key(self.public_key)
-  
-        try:
-            self.peer_socket.connect(self.tracker_info)
-        except socket.error as e:
-            print(f"Erro ao conectar ao tracker: {e}")
-
-        # Troca chaves com tracker
-        self.tracker_public_key = deserialize_public_key(
-            json.loads(self.peer_socket.recv(4096).decode())["public_key"])
-        self.peer_socket.send(json.dumps({"public_key": self.public_key_str}).encode())
+    def __init__(self, peer_host= "0.0.0.0", peer_listen_port=5565, max_conec=5):
+        # # Configura conexao com tracker 
+        self.tracker_connection = Tracker_connection_manager()
+        self.tracker_connection.connect_to_tracker()
+        self.tracker_public_key = self.tracker_connection.tracker_public_key
 
         # Configura conexao com peers
         self.peer_host = peer_host
@@ -30,6 +17,7 @@ class Peer:
         self.peer_server_socket.bind(self.peer_info)
         self.peer_server_socket.listen(max_conec)
         self.peer_listen_port = self.peer_server_socket.getsockname()[1]
+
         self.peer_server_socket_lock = threading.Lock()
         self.peer_connection_lock = threading.Lock()
         self.username = None
@@ -41,11 +29,11 @@ class Peer:
     def peer_listen(self):
         while True:
             user_connec, addr = self.peer_server_socket.accept()
-            print(f"Nova conexao de: {str(addr)}")
-            threading.Thread(target=self.process_new_chat_connec, args=(user_connec, addr)).start()
+            print(f"Nova conexão de: {str(addr)}")
+            threading.Thread(target=self.process_new_chat_connec, args=(user_connec, addr), daemon=True).start()
         
     def start(self):
-        threading.Thread(target=peer.peer_listen, daemon=True).start()
+        threading.Thread(target=peer.peer_listen).start()
         while True:
             self.clear_terminal()
             print("========== Tela inicial Chatp2p ==========")
@@ -83,14 +71,14 @@ class Peer:
                 "peer-listen-port": self.peer_listen_port,
             }
 
-            response = self.send_and_recv_encrypted_request(requisition)
+            response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
 
             if response.get("status") == "ok":
                 print(response.get("message"))
                 self.username = user
-                threading.Thread(target=self.send_heartbeat, daemon=True).start()
+                threading.Thread(target=self.tracker_connection.send_heartbeat).start()
                 self.process_chat_functions()
-                break
+                return
             else:
                 print(response.get("message"))
                 option = input("Deseja tentar novamente? [s/n]: ").strip()
@@ -112,7 +100,7 @@ class Peer:
                     "password": input_password,
                 }
 
-                response = self.send_and_recv_encrypted_request(requisition)
+                response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
                 if response.get("status") == "ok":
                     break
                 else:
@@ -158,13 +146,14 @@ class Peer:
                     ...
                 case 6: self.process_manage_room()
                 case 7: self.process_pending_chats()
+
     
     def process_list_peers(self):
         requisition = {
             "cmd": "list-peers"
         }
 
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         users_list = response.get("peer-list")
         
         self.clear_terminal()
@@ -176,7 +165,7 @@ class Peer:
     
     def process_peer_chat_client(self):
         requisition = {"cmd": "list-peers"}
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
 
         self.clear_terminal()
         print("========== Iniciar chat privado ==========")    
@@ -205,48 +194,25 @@ class Peer:
                 print("Opção inválida, tente novamente")
         
         requisition = {"cmd": "get-peer-addr", "user-to-connect": user_to_connect}
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         
         if response.get("status") == "ok":
             user_to_connect_ip = response.get("user-ip")
             user_to_connect_port = response.get("user-port")
-        else:
-            print(response.get("message"))
-            input("Pressione qualquer tecla para retonar...")
-            return
-        
-        # Peer public key requisition
-        requisition = {"cmd": "get-peer-key", "peer-public-key": user_to_connect}
-        encrypted = encrypt_with_public_key(
-            self.tracker_public_key, json.dumps(requisition))
-        try:
-            with self.peer_socket_lock:
-                self.peer_socket.send(encrypted.encode())    
-                data = self.peer_socket.recv(4096).decode()
-                if not data:
-                    raise ConnectionResetError("Erro de conexão!")
-                response_key = json.loads(data)
-        except Exception as e:
-            print("A conexão com o servidor foi perdida!")
-            print(f"Erro: {e}")
-            print("Encerrando cliente...")
-            sys.exit()
-
-        if response_key.get("status") == "ok":
-            user_to_connect_public_key_str = response_key.get("peer-public-key")
+            user_to_connect_public_key_str = response.get("peer-public-key")
             user_to_connect_public_key = deserialize_public_key(user_to_connect_public_key_str)
-        
+
             chat_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 chat_socket.connect((user_to_connect_ip, user_to_connect_port))
             except socket.error as e:
-                print(f"Erro ao conectar com {user_to_connect}")
+                print(f"[Erro] Falha ao conectar com {user_to_connect}")
             
             request_msg = {"type": "chat_request", "from_user": self.username}
             encrypted = encrypt_with_public_key(user_to_connect_public_key, json.dumps(request_msg))
             
             request_with_public_key = {
-                "public_key": self.public_key_str,
+                "public_key": self.tracker_connection.public_key_str,
                 "encrypted": encrypted
             }
 
@@ -260,7 +226,7 @@ class Peer:
                     if not encrypted:
                         raise ConnectionResetError("Erro de conexão!")
             
-                data = decrypt_with_private_key(self.private_key, encrypted)
+                data = decrypt_with_private_key(self.tracker_connection.private_key, encrypted)
                 response = json.loads(data)
                 response_type = response.get("type")
                 
@@ -278,14 +244,15 @@ class Peer:
             except socket.timeout:
                 print(f"{user_to_connect} não respondeu ao pedido.")               
             except Exception as e:
-                print(f"A conexão com {user_to_connect} foi perdida!")
+                print(f"A conexão com {user_to_connect} foi perdida! {e}")
             finally:
                 input("Pressione qualquer tecla para retornar...")
                 return
         else:
             print("Erro ao obter informações do usuário")
             input("Pressione qualquer tecla para retornar...")
-    
+        
+
     def process_new_chat_connec(self, user_connec, addr):
         try:
             with self.peer_server_socket_lock:
@@ -299,7 +266,7 @@ class Peer:
                 user_chat_pub_key = deserialize_public_key(user_chat_pub_key_str)
                 encrypted_data = request_with_pub["encrypted"]
 
-                decrypted_request_data = decrypt_with_private_key(self.private_key, encrypted_data)
+                decrypted_request_data = decrypt_with_private_key(self.tracker_connection.private_key, encrypted_data)
                 request = json.loads(decrypted_request_data)
                 request_type = request.get("type")
 
@@ -331,41 +298,30 @@ class Peer:
             print(f"Erro de conexão com peer {str(addr)}: {str(e)}")
             user_connec.close()
 
+    def process_list_rooms(self):
+        requisition = {
+            "cmd": "list-rooms"
+        }
+
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
+        rooms_list = response.get("room-list")
+        
+        self.clear_terminal()
+        print("========== Lista de salas ==========")
+        if rooms_list:
+            for room in rooms_list:
+                print(f"Sala: {room}")
+        else:
+            print("Não há nenhuma sala disponível no momento")
+
+        input("pressione qualquer tecla para retornar: ")
+
     def handle_peer_chat(self, conn, peer_public_key, peer_username):
         self.chatting = True
         self.clear_terminal()
         print(f"Chat com {peer_username} iniciado. Digite '/sair' para sair.")
-    
-        def receive_messages():
-            while self.chatting:
-                try:
-                    encrypted_message = conn.recv(4096).decode()
-                    
-                    if not encrypted_message:
-                        print(f"\n[AVISO] Conexão perdida com {peer_username}.")
-                        self.chatting = False
-                        break
-                    
-                    decrypted_message = decrypt_with_private_key(self.private_key, encrypted_message)
-                    data = json.loads(decrypted_message)
 
-                    if data.get("type") == "exit":
-                        print(f"\n[AVISO] {peer_username} encerrou o chat.")
-                        self.chatting = False
-                        break
-                    
-                    elif data.get("type") == "message":
-                        print(f"\r{peer_username}: {data['content']}\nEu: ", end="")
-
-                except (json.JSONDecodeError, ConnectionResetError, ValueError):
-                    print(f"\n[AVISO] Conexão com {peer_username} perdida ou dados corrompidos.")
-                    self.chatting = False
-                    break
-                except Exception:
-                    self.chatting = False
-                    break
-
-        threading.Thread(target=receive_messages, daemon=True).start()
+        threading.Thread(target=self.receive_messages,args=(conn, peer_username), daemon=True).start()
 
         while self.chatting:
             try:
@@ -374,7 +330,7 @@ class Peer:
                 if not self.chatting:
                     break
 
-                if message_text.lower() == 'exit':
+                if message_text.lower() == '/sair':
                     notification = {"type": "exit"}
                     encrypted_notification = encrypt_with_public_key(peer_public_key, json.dumps(notification))
                     conn.send(encrypted_notification.encode())
@@ -400,6 +356,35 @@ class Peer:
         conn.close()
         self.chatting = False
         self.clean_pending_requests()
+    
+    def receive_messages(self, conn, peer_username):
+        while self.chatting:
+            try:
+                encrypted_message = conn.recv(4096).decode()
+                
+                if not encrypted_message:
+                    print(f"\n[AVISO] Conexão perdida com {peer_username}.")
+                    self.chatting = False
+                    break
+                
+                decrypted_message = decrypt_with_private_key(self.tracker_connection.private_key, encrypted_message)
+                data = json.loads(decrypted_message)
+
+                if data.get("type") == "exit":
+                    print(f"\n[AVISO] {peer_username} encerrou o chat.")
+                    self.chatting = False
+                    break
+                
+                elif data.get("type") == "message":
+                    print(f"\r{peer_username}: {data['content']}\nEu: ", end="")
+
+            except (json.JSONDecodeError, ConnectionResetError, ValueError):
+                print(f"\n[AVISO] Conexão com {peer_username} perdida ou dados corrompidos.")
+                self.chatting = False
+                break
+            except Exception:
+                self.chatting = False
+                break
 
     def process_pending_chats(self):
         self.clear_terminal()
@@ -476,24 +461,6 @@ class Peer:
                         pass
                 request['conn'].close()
             self.pending_chat_requests.clear()
-
-    def process_list_rooms(self):
-        requisition = {
-            "cmd": "list-rooms"
-        }
-
-        response = self.send_and_recv_encrypted_request(requisition)
-        rooms_list = response.get("room-list")
-        
-        self.clear_terminal()
-        print("========== Lista de salas ==========")
-        if rooms_list:
-            for room in rooms_list:
-                print(f"Sala: {room}")
-        else:
-            print("Não há nenhuma sala disponível no momento")
-
-        input("pressione qualquer tecla para retornar: ")
     
     def process_create_room(self): 
         self.clear_terminal()       
@@ -511,7 +478,7 @@ class Peer:
         }
         
         try:
-            response = self.send_and_recv_encrypted_request(requisition)           
+            response = self.tracker_connection.send_and_recv_encrypted_request(requisition)          
             if response.get("status") == "ok":
                 print(f"Sala '{room_name}' criada com sucesso!")
             else:
@@ -532,7 +499,7 @@ class Peer:
             "cmd": "list-my-rooms"
         }
         
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
 
         if response.get("status") != "ok" or not response.get("rooms"):
             print("Você não é moderador de nenhuma sala")
@@ -586,7 +553,7 @@ class Peer:
             "room-name": room_name
         }
         
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         members = response.get("members")
 
         self.clear_terminal()
@@ -610,7 +577,7 @@ class Peer:
             "user": user
         }
         
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         print(response.get("message"))
         input("Pressione qualquer tecla para retornar...")
     
@@ -628,7 +595,7 @@ class Peer:
             "user": user
         }
         
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         print(response.get("message"))
         input("Pressione qualquer tecla para retornar...")
     
@@ -644,39 +611,19 @@ class Peer:
             "room-name": room_name
         }
         
-        response = self.send_and_recv_encrypted_request(requisition)
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         print(response.get("message"))
 
-    def send_and_recv_encrypted_request(self, requisition):
-        """Helper para enviar requisições criptografadas"""
-        encrypted = encrypt_with_public_key(
-            self.tracker_public_key, json.dumps(requisition))
-        try:
-            with self.peer_socket_lock:
-                self.peer_socket.send(encrypted.encode())    
-                encrypted_data = self.peer_socket.recv(4096).decode()
-
-                if not encrypted_data:
-                    raise ConnectionResetError("Erro de conexão!")
+ 
+    # def send_heartbeat(self, interval=1):
+    #     while True:
+    #         try:
+    #             requisition = {"cmd": "heartbeat"}
+    #             self.tracker_connection.send_and_recv_encrypted_request(requisition)
+    #         except Exception as e:
+    #             pass
             
-            data = decrypt_with_private_key(self.private_key, encrypted_data)
-                
-            return json.loads(data)
-        except Exception as e:
-            print("A conexão com o servidor foi perdida!")
-            print(f"Erro: {e}")
-            print("Encerrando cliente...")
-            sys.exit()
-    
-    def send_heartbeat(self, interval=30):
-        while True:
-            try:
-                requisition = {"cmd": "heartbeat"}
-                self.send_and_recv_encrypted_request(requisition)
-            except Exception as e:
-                pass
-            
-            time.sleep(interval)
+    #         time.sleep(interval)
 
     def clear_terminal(self):
         if os.name == 'nt':

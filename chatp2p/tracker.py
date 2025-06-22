@@ -1,6 +1,6 @@
 import socket, json, threading
-from managers.user_manager import User_manager
-from managers.room_manager import Room_manager
+from tracker_managers.user_manager import User_manager
+from tracker_managers.room_manager import Room_manager
 from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
 
 class Tracker:
@@ -64,12 +64,6 @@ class Tracker:
                         case "get-peer-addr":
                             if user:
                                 response = self.user_manager.get_peer_addr(peer_requisition["user-to-connect"])
-                        
-                        case "get-peer-key":
-                            if user:
-                                response = self.user_manager.get_peer_public_key(peer_requisition["peer-public-key"])
-                                peer_conec.send(json.dumps(response).encode())
-                                break
 
                         case "list-rooms":
                             if user:
@@ -102,7 +96,7 @@ class Tracker:
                         case "close-room":
                             if user:
                                 response = self.room_manager.close_room(peer_requisition["room-name"], user)
-                        
+
                         case "heartbeat":
                             if user:
                                 response = self.user_manager.update_heartbeat(user)
