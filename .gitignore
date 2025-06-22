@@ -105,6 +105,7 @@ celerybeat.pid
 .venv
 env/
 venv/
+/chatp2p/lib64
 /chatp2p/bin/
 /chatp2p/lib/
 /chatp2p/include/
