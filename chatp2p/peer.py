@@ -142,8 +142,7 @@ class Peer:
                 case 2: self.process_peer_chat_client()
                 case 3: self.process_list_rooms()
                 case 4: self.process_create_room()
-                case 5:
-                    ...
+                case 5: self.process_join_room()
                 case 6: self.process_manage_room()
                 case 7: self.process_pending_chats()
 
@@ -488,6 +487,58 @@ class Peer:
             print(f"Erro durante a criação da sala: {str(e)}")
         
         input("Pressione qualquer tecla para retornar: ")
+
+
+    def process_join_room(self):
+        """Permite que o peer entre em uma sala de chat existente"""
+        # Obtém lista de salas disponíveis
+        requisition = {"cmd": "list-rooms"}
+        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
+        
+        if response.get("status") != "ok" or not response.get("room-list"):
+            print("Não há salas disponíveis no momento.")
+            input("Pressione qualquer tecla para retornar...")
+            return
+        
+        rooms_list = response.get("room-list")
+        
+        self.clear_terminal()
+        print("========== Entrar em Sala ==========")
+        print("Salas disponíveis:")
+        for i, room in enumerate(rooms_list, 1):
+            print(f"[{i}] {room}")
+        print("[0] Voltar")
+        
+        try:
+            choice = int(input("Selecione a sala para entrar: "))
+            if choice == 0:
+                return
+            if not 1 <= choice <= len(rooms_list):
+                raise ValueError
+                
+            room_name = rooms_list[choice - 1]
+            
+            # Envia requisição para entrar na sala
+            requisition = {
+                "cmd": "join-room",
+                "room-to-join": room_name
+            }
+            
+            response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
+            
+            if response.get("status") == "ok":
+                print(f"Você entrou na sala '{room_name}' com sucesso!")
+                # Aqui você pode adicionar lógica para iniciar o chat em grupo
+                # Por exemplo, obter lista de membros online e conectar-se a eles
+            else:
+                print(f"Erro ao entrar na sala: {response.get('message')}")
+                
+        except (ValueError, IndexError):
+            print("Seleção inválida.")
+        except Exception as e:
+            print(f"Erro ao processar requisição: {str(e)}")
+            
+        input("Pressione qualquer tecla para retornar...")
 
     def process_manage_room(self):
         """
