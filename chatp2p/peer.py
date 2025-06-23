@@ -615,15 +615,7 @@ class Peer:
         print(response.get("message"))
 
  
-    # def send_heartbeat(self, interval=1):
-    #     while True:
-    #         try:
-    #             requisition = {"cmd": "heartbeat"}
-    #             self.tracker_connection.send_and_recv_encrypted_request(requisition)
-    #         except Exception as e:
-    #             pass
-            
-    #         time.sleep(interval)
+ 
 
     def clear_terminal(self):
         if os.name == 'nt':
