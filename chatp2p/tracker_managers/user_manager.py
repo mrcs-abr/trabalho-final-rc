@@ -58,7 +58,7 @@ class User_manager:
                 try:
                     self.active_peers[user]["peer-conec"].close()
                 except Exception as e:
-                    print(f"Erro ao fechar conexao para {user}")
+                    print(f"Erro ao fechar conexao para {user}: {e}")
                 finally:
                     del self.active_peers[user]
                     print(f"Usuário {user} desconectado")
@@ -90,19 +90,8 @@ class User_manager:
                 self.active_peers[user]["last-seen"] = time.time()
                 return {"status": "ok", "message": f"heartbeat recebido de {user}"}
     
-    def monitor_users(self):
-        while True:
-            time.sleep(10)
-            now = time.time()
-
-            inactive_users = []
-
-            with self.active_peers_lock:
-                for username, user in self.active_peers.items():
-                    if now - user["last-seen"] > 90:
-                        inactive_users.append(username)
-            
-            if inactive_users:
-                for user in inactive_users:
-                    self.logout(user)
-    
+    # INÍCIO DA ALTERAÇÃO: O método monitor_users foi movido para a classe Tracker
+    # para centralizar a lógica de logout e limpeza de salas.
+    # def monitor_users(self):
+    #     ...
+    # FIM DA ALTERAÇÃO

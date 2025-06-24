@@ -50,10 +50,14 @@ class Room_manager:
             
             if user not in self.chat_rooms[room_to_join]["members"]:
                 return {"status": "error", "message": f"Você não é membro desta sala, peça ao moderador <{self.chat_rooms[room_to_join]['moderator']}> para te adicionar."}
-            else:
+            
+            # INÍCIO DA ALTERAÇÃO: Adiciona o usuário na lista de membros ativos ('in-room')
+            if user not in self.chat_rooms[room_to_join]["in-room"]:
                 self.chat_rooms[room_to_join]["in-room"].append(user)
                 self.save_rooms()
-                return {"status": "ok", "message": f"O usuário {user} entrou na sala"}
+            # FIM DA ALTERAÇÃO
+            
+            return {"status": "ok", "message": f"O usuário {user} entrou na sala"}
 
     def list_my_rooms(self, user):
         with self.lock:
@@ -116,6 +120,39 @@ class Room_manager:
                 return {"status": "ok", "message": f"Usuário {user_to_remove} removido da sala"}
             
             return {"status": "ok", "message": "Usuário não encontrado"}
+
+    # INÍCIO DA ALTERAÇÃO: Nova função para um peer notificar que está saindo da sala
+    def leave_room(self, room_name, user):
+        with self.lock:
+            if room_name in self.chat_rooms and user in self.chat_rooms[room_name].get("in-room", []):
+                self.chat_rooms[room_name]["in-room"].remove(user)
+                self.save_rooms()
+                return {"status": "ok", "message": "Você saiu da sala."}
+            # Não retorna erro se a sala ou usuário não for encontrado, para evitar problemas de estado inconsistente
+            return {"status": "ok", "message": "Você saiu da sala."}
+    # FIM DA ALTERAÇÃO
+
+    # INÍCIO DA ALTERAÇÃO: Nova função para obter a lista de membros online (in-room) de uma sala
+    def get_online_members_in_room(self, room_name, requesting_user):
+        with self.lock:
+            if room_name not in self.chat_rooms:
+                return {"status": "error", "message": "Sala não encontrada"}
+            
+            online_members = [
+                member for member in self.chat_rooms[room_name]["in-room"]
+                if member != requesting_user
+            ]
+            return {"status": "ok", "online-members": online_members}
+    # FIM DA ALTERAÇÃO
+
+    # INÍCIO DA ALTERAÇÃO: Nova função para remover um usuário de todas as listas 'in-room' ao desconectar
+    def remove_user_from_all_rooms(self, user):
+        with self.lock:
+            for room_name in self.chat_rooms:
+                if user in self.chat_rooms[room_name].get("in-room", []):
+                    self.chat_rooms[room_name]["in-room"].remove(user)
+            self.save_rooms()
+    # FIM DA ALTERAÇÃO
     
     def update_mod_heartbeat(self, user):
         for room in self.chat_rooms.values():
@@ -149,4 +186,3 @@ class Room_manager:
             del self.chat_rooms[room_name]
             self.save_rooms()
             return {"status": "ok", "message": f"A sala {room_name} foi fechada"}
-        
