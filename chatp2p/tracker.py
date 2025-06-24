@@ -5,6 +5,7 @@ from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deseria
 
 class Tracker:
     def __init__(self, host='0.0.0.0', port=6000, max_connec=5):
+        # ... (código inalterado) ...
         self.host = host
         self.port = port
         self.server_info = (host, port)
@@ -18,25 +19,23 @@ class Tracker:
         self.user_manager = User_manager()
         self.room_manager = Room_manager()
 
-        # INÍCIO DA ALTERAÇÃO: Inicia a thread que monitora usuários inativos
         threading.Thread(target=self.monitor_inactive_users, daemon=True).start()
         threading.Thread(target=self.room_manager.monitor_rooms, daemon=True).start()
-        # FIM DA ALTERAÇÃO
 
         print(f"Tracker iniciado em {self.host}:{self.port}")
         print("Aguardando conexões...")
 
-    # INÍCIO DA ALTERAÇÃO: Nova função para monitorar e limpar usuários inativos
+
     def monitor_inactive_users(self):
+        # ... (código inalterado) ...
         while True:
-            time.sleep(30)  # Verifica a cada 30 segundos
+            time.sleep(30)
             now = time.time()
             inactive_users = []
 
-            # Acessa a lista de peers de forma segura
             with self.user_manager.active_peers_lock:
                 for username, user_data in list(self.user_manager.active_peers.items()):
-                    if now - user_data.get("last-seen", now) > 60: # Tempo de inatividade (60s)
+                    if now - user_data.get("last-seen", now) > 60:
                         inactive_users.append(username)
             
             if inactive_users:
@@ -44,13 +43,15 @@ class Tracker:
                 for user in inactive_users:
                     self.user_manager.logout(user)
                     self.room_manager.remove_user_from_all_rooms(user)
-    # FIM DA ALTERAÇÃO
+
 
     def listen(self):
+        # ... (código inalterado) ...
         while True:
             peer_conec, address = self.server.accept()
             print("Conexao de: " + str(address))
             threading.Thread(target=self.process_new_peer, args=(peer_conec, address)).start()
+
 
     def process_new_peer(self, peer_conec, address):
             user = None
@@ -62,7 +63,7 @@ class Tracker:
                 
                 while True:
                     encrypted_data = peer_conec.recv(4096)
-                    if not encrypted_data: # Conexão fechada pelo peer
+                    if not encrypted_data:
                         break
 
                     data = decrypt_with_private_key(self.private_key, encrypted_data.decode())
@@ -70,6 +71,8 @@ class Tracker:
                     
                     cmd = peer_requisition.get("cmd")
                     
+                    response = {"status": "error", "message": "Comando inválido ou usuário não logado"}
+
                     match cmd:
                         case "login":
                             response = self.user_manager.login(peer_requisition["usr"], 
@@ -105,17 +108,14 @@ class Tracker:
                             if user:
                                 response = self.room_manager.join_room(peer_requisition["room-to-join"], user)
                         
-                        # INÍCIO DA ALTERAÇÃO: Novo caso de comando para obter membros da sala
                         case "get-room-members":
                             if user:
                                 room_name = peer_requisition.get("room-name")
-                                # Passo 1: Obter nomes de usuários online do Room_manager
                                 online_users_response = self.room_manager.get_online_members_in_room(room_name, user)
 
                                 if online_users_response["status"] == "ok":
                                     online_usernames = online_users_response["online-members"]
                                     members_info = {}
-                                    # Passo 2: Obter detalhes de cada usuário do User_manager
                                     for member_user in online_usernames:
                                         info_response = self.user_manager.get_peer_addr(member_user)
                                         if info_response["status"] == "ok":
@@ -127,13 +127,10 @@ class Tracker:
                                     response = {"status": "ok", "members": members_info}
                                 else:
                                     response = online_users_response
-                        # FIM DA ALTERAÇÃO
                         
-                        # INÍCIO DA ALTERAÇÃO: Novo caso para peer sair de uma sala
                         case "leave-room":
                             if user:
                                 response = self.room_manager.leave_room(peer_requisition["room-name"], user)
-                        # FIM DA ALTERAÇÃO
 
                         case "list-my-rooms":
                             if user:
@@ -159,26 +156,22 @@ class Tracker:
                             if user:
                                 response = self.user_manager.update_heartbeat(user)
                                 self.room_manager.update_mod_heartbeat(user)
-
-                        case _:
-                            response = {"status": "error", "message": "Comando inválido"}
                         
+                    # INÍCIO DA ALTERAÇÃO: Adicionando de volta o print para logging no console do tracker
+                    print(f"Comando '{cmd}' de '{user if user else str(address)}'. Resposta: {response}")
+                    # FIM DA ALTERAÇÃO
 
                     encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
                     peer_conec.send(encrypted_response.encode())
             
-            except (ConnectionResetError, json.JSONDecodeError, ValueError) as e:
-                # O erro é esperado quando um peer se desconecta, então não precisa ser logado como um erro crítico.
-                # print(f"Erro de conexão com peer {str(address)}: {str(e)}")
+            except (ConnectionResetError, json.JSONDecodeError, ValueError, OSError):
                 pass
             
             finally:
-                # INÍCIO DA ALTERAÇÃO: Orquestração do logout completo do usuário ao final da conexão
                 if user:
                     self.user_manager.logout(user)
                     self.room_manager.remove_user_from_all_rooms(user)
                 peer_conec.close()
-                # FIM DA ALTERAÇÃO
     
 if __name__ == "__main__":
     tracker = Tracker()

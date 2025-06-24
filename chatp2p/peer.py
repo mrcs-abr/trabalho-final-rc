@@ -23,12 +23,10 @@ class Peer:
         self.username = None
         self.chatting = False
         
-        # INÍCIO DA ALTERAÇÃO: Atributos para gerenciamento de chat em sala
         self.in_group_chat = False
         self.current_room = None
         self.room_peers_conn = {} # Dicionário para {username: {conn: socket, public_key: key}}
         self.room_peers_lock = threading.Lock()
-        # FIM DA ALTERAÇÃO
         
         self.pending_requests_lock = threading.Lock()
         self.pending_chat_requests = []
@@ -36,14 +34,16 @@ class Peer:
     
     def peer_listen(self):
         while True:
-            user_connec, addr = self.peer_server_socket.accept()
-            # INÍCIO DA ALTERAÇÃO: A função foi renomeada e a thread agora é daemon
-            threading.Thread(target=self.process_new_peer_connection, args=(user_connec, addr), daemon=True).start()
-            # FIM DA ALTERAÇÃO
+            try:
+                user_connec, addr = self.peer_server_socket.accept()
+                threading.Thread(target=self.process_new_peer_connection, args=(user_connec, addr), daemon=True).start()
+            except Exception:
+                # Ocorre quando o socket é fechado, pode ser ignorado.
+                break
         
     def start(self):
+        # ... (código inalterado)
         threading.Thread(target=self.peer_listen, daemon=True).start()
-        # ... (código do menu inicial inalterado) ...
         while True:
             self.clear_terminal()
             print("========== Tela inicial Chatp2p ==========")
@@ -64,15 +64,132 @@ class Peer:
                 case 1: self.process_login()
                 case 2: self.process_register()
                 case 3:
-                    # INÍCIO DA ALTERAÇÃO: Garante saída limpa do chat em grupo
                     if self.in_group_chat:
                         self.leave_group_chat()
-                    # FIM DA ALTERAÇÃO
+                    self.peer_server_socket.close()
                     self.tracker_connection.peer_socket.close()
                     self.clean_pending_requests()
-                    break
-    
-    # ... (process_login e process_register inalterados) ...
+                    return # Sai do programa
+
+    # INÍCIO DA ALTERAÇÃO: Melhoria na exibição de notificações durante o chat em grupo
+    def process_new_peer_connection(self, user_connec, addr):
+        try:
+            data = user_connec.recv(4096).decode()
+            if not data:
+                raise ConnectionResetError("Erro de conexão!")
+
+            request_with_pub = json.loads(data)
+            user_chat_pub_key_str = request_with_pub["public_key"]
+            user_chat_pub_key = deserialize_public_key(user_chat_pub_key_str)
+            encrypted_data = request_with_pub["encrypted"]
+
+            decrypted_request_data = decrypt_with_private_key(self.tracker_connection.private_key, encrypted_data)
+            request = json.loads(decrypted_request_data)
+            request_type = request.get("type")
+
+            match request_type:
+                case "chat_request": 
+                    #... (código inalterado)
+                    if self.chatting or self.in_group_chat:
+                        response = {"type": "busy"}
+                        encrypted = encrypt_with_public_key(
+                                    user_chat_pub_key, json.dumps(response))
+                        user_connec.send(encrypted.encode())
+                        user_connec.close()
+                        return
+
+                    requester_user = request.get("from_user")
+                    print(f"\n[NOTIFICAÇÃO] Você recebeu um pedido de chat de {requester_user}. Verifique o menu.")
+                    with self.pending_requests_lock:
+                        self.pending_chat_requests.append({
+                            "user": requester_user,
+                            "conn": user_connec,
+                            "public_key": user_chat_pub_key
+                            }
+                        )
+                
+                case "group_chat_join":
+                    room_name = request.get("room_name")
+                    requester_user = request.get("from_user")
+                    
+                    if self.in_group_chat and room_name == self.current_room:
+                        with self.room_peers_lock:
+                            self.room_peers_conn[requester_user] = {
+                                "conn": user_connec,
+                                "public_key": user_chat_pub_key
+                            }
+                        threading.Thread(target=self.receive_group_messages, args=(user_connec, requester_user), daemon=True).start()
+                        
+                        response = {"type": "group_join_accept"}
+                        encrypted = encrypt_with_public_key(user_chat_pub_key, json.dumps(response))
+                        user_connec.send(encrypted.encode())
+                        
+                        # Limpa a linha de input atual, imprime a notificação e redesenha o prompt
+                        sys.stdout.write('\r' + ' ' * 80 + '\r')
+                        print(f"[SALA] {requester_user} entrou no chat.")
+                        sys.stdout.write("Eu: ")
+                        sys.stdout.flush()
+                    else:
+                        user_connec.close()
+                case _:
+                    user_connec.close()
+        except (ConnectionResetError, json.JSONDecodeError, ValueError, OSError):
+            user_connec.close()
+    # FIM DA ALTERAÇÃO
+
+    # ... (demais funções até receive_group_messages)...
+
+    # INÍCIO DA ALTERAÇÃO: CORREÇÃO CRÍTICA NA FUNÇÃO DE RECEBER MENSAGENS EM GRUPO
+    def receive_group_messages(self, conn, peer_username):
+        """Escuta por mensagens de um peer específico no chat em grupo e as exibe na tela."""
+        while self.in_group_chat:
+            try:
+                encrypted_message = conn.recv(4096).decode()
+                if not encrypted_message:
+                    break # Conexão fechada
+
+                # CORREÇÃO: A variável correta a ser passada para a descriptografia é a 'encrypted_message' que acabamos de receber.
+                # O erro estava aqui, usando 'decrypted_message' antes de ser definida.
+                decrypted_message = decrypt_with_private_key(self.tracker_connection.private_key, encrypted_message)
+                data = json.loads(decrypted_message)
+                
+                msg_type = data.get("type")
+                if msg_type == "group_message":
+                    # Melhoria na interface: Limpa a linha de input, imprime a mensagem e redesenha o prompt
+                    sys.stdout.write('\r' + ' ' * 80 + '\r') # Limpa a linha atual
+                    print(f"{peer_username}: {data['content']}")
+                    sys.stdout.write("Eu: ")
+                    sys.stdout.flush()
+
+                elif msg_type == "group_leave":
+                    sys.stdout.write('\r' + ' ' * 80 + '\r')
+                    print(f"[SALA] {peer_username} saiu do chat.")
+                    sys.stdout.write("Eu: ")
+                    sys.stdout.flush()
+                    break # Encerra a thread para este usuário
+
+            except (json.JSONDecodeError, ValueError, ConnectionResetError, OSError):
+                # Erros esperados quando a conexão é encerrada.
+                break
+            except Exception as e:
+                # Captura qualquer outro erro inesperado para debug.
+                print(f"[ERRO THREAD {peer_username}]: {e}")
+                break
+        
+        # Rotina de limpeza da conexão
+        with self.room_peers_lock:
+            if peer_username in self.room_peers_conn:
+                self.room_peers_conn[peer_username]["conn"].close()
+                del self.room_peers_conn[peer_username]
+        
+        if self.in_group_chat: # Só imprime a notificação se ainda estivermos no chat
+            sys.stdout.write('\r' + ' ' * 80 + '\r')
+            print(f"[SALA] Conexão com {peer_username} encerrada.")
+            sys.stdout.write("Eu: ")
+            sys.stdout.flush()
+    # FIM DA ALTERAÇÃO
+
+    # ... (Restante do arquivo permanece o mesmo)
     def process_login(self):
         while True:
             self.clear_terminal()
@@ -128,11 +245,9 @@ class Peer:
 
     def process_chat_functions(self):
         while True:
-            # INÍCIO DA ALTERAÇÃO: Verifica se está em chat 1:1 ou em grupo
             if self.chatting or self.in_group_chat:
                 time.sleep(1)
                 continue
-            # FIM DA ALTERAÇÃO
 
             self.clear_terminal()
             print(f"========== Chatp2p - Logado como: {self.username} ==========")
@@ -166,15 +281,12 @@ class Peer:
                 case 6: self.process_manage_room()
                 case 7: self.process_pending_chats()
                 case 8:
-                    # Adicionado para permitir logout e retorno à tela inicial
                     print("Deslogando...")
-                    # A conexão com o tracker será fechada pelo loop principal do tracker ao detectar o socket fechado
-                    return # Retorna para a tela de login/registro
+                    return 
                 case _:
                     print("Opção inválida")
 
 
-    # ... (process_list_peers e process_peer_chat_client inalterados) ...
     def process_list_peers(self):
         requisition = {
             "cmd": "list-peers"
@@ -280,78 +392,7 @@ class Peer:
             input("Pressione qualquer tecla para retornar...")
         
 
-    # INÍCIO DA ALTERAÇÃO: Função renomeada e modificada para lidar com diferentes tipos de conexão P2P
-    def process_new_peer_connection(self, user_connec, addr):
-        try:
-            data = user_connec.recv(4096).decode()
-            if not data:
-                raise ConnectionResetError("Erro de conexão!")
-
-            request_with_pub = json.loads(data)
-            user_chat_pub_key_str = request_with_pub["public_key"]
-            user_chat_pub_key = deserialize_public_key(user_chat_pub_key_str)
-            encrypted_data = request_with_pub["encrypted"]
-
-            decrypted_request_data = decrypt_with_private_key(self.tracker_connection.private_key, encrypted_data)
-            request = json.loads(decrypted_request_data)
-            request_type = request.get("type")
-
-            match request_type:
-                case "chat_request": 
-                    if self.chatting or self.in_group_chat:
-                        response = {"type": "busy"}
-                        encrypted = encrypt_with_public_key(
-                                    user_chat_pub_key, json.dumps(response))
-                        user_connec.send(encrypted.encode())
-                        user_connec.close()
-                        return
-
-                    requester_user = request.get("from_user")
-                    print(f"\n[NOTIFICAÇÃO] Você recebeu um pedido de chat de {requester_user}. Verifique o menu.")
-                    with self.pending_requests_lock:
-                        self.pending_chat_requests.append({
-                            "user": requester_user,
-                            "conn": user_connec,
-                            "public_key": user_chat_pub_key
-                            }
-                        )
-                
-                case "group_chat_join":
-                    room_name = request.get("room_name")
-                    requester_user = request.get("from_user")
-                    
-                    if self.in_group_chat and room_name == self.current_room:
-                        # Aceita a conexão, armazena e inicia a thread de escuta
-                        with self.room_peers_lock:
-                            self.room_peers_conn[requester_user] = {
-                                "conn": user_connec,
-                                "public_key": user_chat_pub_key
-                            }
-                        threading.Thread(target=self.receive_group_messages, args=(user_connec, requester_user), daemon=True).start()
-                        
-                        # Responde ao novo membro que ele foi aceito
-                        response = {"type": "group_join_accept"}
-                        encrypted = encrypt_with_public_key(user_chat_pub_key, json.dumps(response))
-                        user_connec.send(encrypted.encode())
-                        
-                        sys.stdout.write('\r' + ' ' * (len(input("Eu: ")) + 4) + '\r')
-                        print(f"\n[SALA] {requester_user} entrou no chat.")
-                        sys.stdout.write("Eu: ")
-                        sys.stdout.flush()
-                    else:
-                        # Se não estiver na sala correta, fecha a conexão
-                        user_connec.close()
-
-                case _:
-                    user_connec.close()
-
-        except (ConnectionResetError, json.JSONDecodeError, ValueError):
-            # Erros esperados quando peers desconectam, não precisam poluir o console.
-            user_connec.close()
-    # FIM DA ALTERAÇÃO
-
     def process_list_rooms(self):
-        # ... (código inalterado) ...
         requisition = {
             "cmd": "list-rooms"
         }
@@ -369,7 +410,6 @@ class Peer:
 
         input("pressione qualquer tecla para retornar: ")
 
-    # ... (handle_peer_chat e receive_messages para chat 1:1 permanecem inalterados) ...
     def handle_peer_chat(self, conn, peer_public_key, peer_username):
         self.chatting = True
         self.clear_terminal()
@@ -440,10 +480,7 @@ class Peer:
                 self.chatting = False
                 break
 
-    # INÍCIO DA ALTERAÇÃO: Função completamente reescrita para implementar o chat em grupo P2P
     def process_join_room(self):
-        """Permite que o peer entre em uma sala de chat, obtenha a lista de membros e se conecte a eles."""
-        # 1. Obtém lista de salas disponíveis
         requisition = {"cmd": "list-rooms"}
         response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         
@@ -470,7 +507,6 @@ class Peer:
                 
             room_name = rooms_list[choice - 1]
             
-            # 2. Envia requisição para o tracker para registrar a entrada na sala
             requisition = {"cmd": "join-room", "room-to-join": room_name}
             response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
             
@@ -483,14 +519,12 @@ class Peer:
             self.current_room = room_name
             self.in_group_chat = True
 
-            # 3. Pede ao tracker a lista de membros que já estão online na sala
             req_members = {"cmd": "get-room-members", "room-name": room_name}
             res_members = self.tracker_connection.send_and_recv_encrypted_request(req_members)
 
             if res_members.get("status") == "ok":
                 online_members = res_members.get("members", {})
                 
-                # 4. Itera sobre os membros online para estabelecer conexão P2P com cada um
                 for username, details in online_members.items():
                     try:
                         print(f"Tentando conectar com {username}...")
@@ -499,7 +533,6 @@ class Peer:
                         chat_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         chat_socket.connect((details["user-ip"], details["user-port"]))
 
-                        # Envia um pedido de "join" P2P para o membro da sala
                         request_msg = {"type": "group_chat_join", "from_user": self.username, "room_name": self.current_room}
                         encrypted = encrypt_with_public_key(peer_pub_key, json.dumps(request_msg))
                         
@@ -507,7 +540,6 @@ class Peer:
                         
                         chat_socket.send(json.dumps(request_with_public_key).encode())
                         
-                        # Aguarda a confirmação do outro peer
                         encrypted_response = chat_socket.recv(4096).decode()
                         if not encrypted_response:
                             raise ConnectionError(f"Peer {username} não respondeu.")
@@ -519,7 +551,6 @@ class Peer:
                             with self.room_peers_lock:
                                 self.room_peers_conn[username] = {"conn": chat_socket, "public_key": peer_pub_key}
                             print(f"Conexão com {username} estabelecida.")
-                            # Inicia uma thread dedicada para receber mensagens deste peer
                             threading.Thread(target=self.receive_group_messages, args=(chat_socket, username), daemon=True).start()
                         else:
                             print(f"Falha ao conectar com {username}.")
@@ -527,11 +558,10 @@ class Peer:
                     except Exception as e:
                         print(f"Erro ao conectar com {username}: {e}")
                 
-                # 5. Se conectou com sucesso (ou se não havia ninguém), inicia o loop do chat
                 self.handle_group_chat()
             else:
                 print("Não foi possível obter a lista de membros da sala.")
-                self.leave_group_chat() # Sai da sala de forma limpa se não conseguir a lista de membros
+                self.leave_group_chat()
                 
         except (ValueError, IndexError):
             print("Seleção inválida.")
@@ -542,7 +572,6 @@ class Peer:
         input("Pressione qualquer tecla para retornar...")
 
     def handle_group_chat(self):
-        """Gerencia o loop de envio de mensagens do usuário no chat em grupo."""
         self.clear_terminal()
         print(f"Bem-vindo à sala '{self.current_room}'. Digite '/sair' para sair.")
         
@@ -557,70 +586,26 @@ class Peer:
                 message_to_send = {"type": "group_message", "content": message_text}
                 json_message = json.dumps(message_to_send)
 
-                # Multicast da mensagem para todos os peers conectados na sala
                 with self.room_peers_lock:
                     for peer_user, peer_info in list(self.room_peers_conn.items()):
                         try:
                             encrypted_message = encrypt_with_public_key(peer_info["public_key"], json_message)
                             peer_info["conn"].send(encrypted_message.encode())
                         except (BrokenPipeError, ConnectionResetError):
-                            # Remove o peer se a conexão for perdida
                             print(f"\n[SALA] A conexão com {peer_user} foi perdida.")
                             peer_info["conn"].close()
                             del self.room_peers_conn[peer_user]
-                            print("Eu: ", end="") # Reprinta o prompt
+                            print("Eu: ", end="")
         finally:
-            # Garante que, ao sair do loop, a rotina de saída da sala seja chamada
             self.leave_group_chat()
 
-    def receive_group_messages(self, conn, peer_username):
-        """Escuta por mensagens de um peer específico no chat em grupo e as exibe na tela."""
-        while self.in_group_chat:
-            try:
-                encrypted_message = conn.recv(4096).decode()
-                if not encrypted_message:
-                    break # Conexão fechada
-                
-                decrypted_message = decrypt_with_private_key(self.tracker_connection.private_key, decrypted_message)
-                data = json.loads(decrypted_message)
-                
-                msg_type = data.get("type")
-                if msg_type == "group_message":
-                    # Limpa a linha de input atual, imprime a mensagem recebida e re-imprime o prompt
-                    sys.stdout.write('\r' + ' ' * (len(input("Eu: ")) + 4) + '\r')
-                    print(f"{peer_username}: {data['content']}")
-                    sys.stdout.write("Eu: ")
-                    sys.stdout.flush()
-                elif msg_type == "group_leave":
-                    sys.stdout.write('\r' + ' ' * (len(input("Eu: ")) + 4) + '\r')
-                    print(f"\n[SALA] {peer_username} saiu do chat.")
-                    sys.stdout.write("Eu: ")
-                    sys.stdout.flush()
-                    break # Encerra a thread para este usuário
-            except (json.JSONDecodeError, ValueError, ConnectionResetError):
-                break # Sai do loop se houver erro ou desconexão
-            except Exception:
-                break
-        
-        # Rotina de limpeza da conexão
-        with self.room_peers_lock:
-            if peer_username in self.room_peers_conn:
-                self.room_peers_conn[peer_username]["conn"].close()
-                del self.room_peers_conn[peer_username]
-        
-        sys.stdout.write('\r' + ' ' * (len(input("Eu: ")) + 4) + '\r')
-        print(f"\n[SALA] Conexão com {peer_username} encerrada.")
-        sys.stdout.write("Eu: ")
-        sys.stdout.flush()
 
     def leave_group_chat(self):
-        """Executa a lógica para sair de um chat em grupo de forma limpa."""
         if not self.in_group_chat:
             return
 
-        self.in_group_chat = False # Sinaliza para as threads encerrarem
+        self.in_group_chat = False 
 
-        # Notifica outros peers da saída
         notification = {"type": "group_leave"}
         json_notification = json.dumps(notification)
         
@@ -635,17 +620,14 @@ class Peer:
                     peer_info["conn"].close()
             self.room_peers_conn.clear()
 
-        # Notifica o tracker que está saindo da sala
         if self.current_room:
             requisition = {"cmd": "leave-room", "room-name": self.current_room}
             self.tracker_connection.send_and_recv_encrypted_request(requisition)
         
         self.current_room = None
         print("\nVocê saiu da sala.")
-        time.sleep(1) # Pausa para dar tempo às threads de encerrarem e limpar o buffer de input
-    # FIM DA ALTERAÇÃO
+        time.sleep(1)
 
-    # ... (Restante do arquivo: process_manage_room, clean_pending_requests, etc. inalterados) ...
     def process_pending_chats(self):
         self.clear_terminal()
         print("========== Pedidos de Chat Pendentes ==========")      
@@ -749,9 +731,6 @@ class Peer:
         input("Pressione qualquer tecla para retornar: ")
 
     def process_manage_room(self):
-        """
-        Menu de moderação para criadores de sala
-        """
         self.clear_terminal()
         print("========== Gerenciar Sala ==========")
         requisition = {
@@ -765,7 +744,6 @@ class Peer:
             input("Pressione qualquer tecla para voltar...")
             return
         
-        # Mostra salas que pode moderar
         print("Suas salas (como moderador):")
         for i, room in enumerate(response["rooms"], 1):
             print(f"[{i}] {room}")
@@ -779,7 +757,6 @@ class Peer:
             print("Seleção inválida")
             return
         
-        # Menu de moderação
         while True:
             self.clear_terminal()
             print(f"\n========== Gerenciando Sala: {room_name} ==========")
@@ -806,7 +783,6 @@ class Peer:
                 case _: print("Opção inválida")
         
     def process_list_room_members(self, room_name):
-        """Lista todos os membros de uma sala"""
         requisition = {
             "cmd": "list-members",
             "room-name": room_name
@@ -826,7 +802,6 @@ class Peer:
         input("\nPressione qualquer tecla para retornar...")
     
     def process_add_member(self, room_name):
-        """Adiciona um usuário à sala"""
         self.clear_terminal()
         user = input("Digite o nome do usuário para adicionar: ").strip()
         if not user:
@@ -844,7 +819,6 @@ class Peer:
         input("Pressione qualquer tecla para retornar...")
     
     def process_remove_member(self, room_name):
-        """Remove um usuário da sala"""
         self.clear_terminal()
         user = input("Digite o nome do usuário para remover: ").strip()
         if not user:
@@ -862,7 +836,6 @@ class Peer:
         input("Pressione qualquer tecla para retornar...")
     
     def process_close_room(self, room_name):
-        """Fecha permanentemente a sala"""
         confirm = input(f"Tem certeza que deseja fechar a sala '{room_name}'? (s/n): ").strip().lower()
         if confirm != 's':
             print("Operação cancelada")
@@ -887,7 +860,6 @@ class Peer:
             os.system("clear")
 
 if __name__ == "__main__":
-    # Permite escolher a porta para facilitar testes com múltiplos peers locais
     port = 0
     if len(sys.argv) > 1:
         try:
