@@ -56,7 +56,7 @@ class Peer:
                 try:
                     option = int(input("->"))
                     break
-                except:
+                except ValueError:
                     print("Opção inválida")
                     continue
             
@@ -268,7 +268,7 @@ class Peer:
             
             try:
                 option = int(input("->"))
-            except:
+            except ValueError:
                 print("Opção inválida")
                 continue
             
@@ -768,7 +768,7 @@ class Peer:
             
             try:
                 option = int(input("-> "))
-            except:
+            except ValueError:
                 print("Opção inválida")
                 continue
             
@@ -859,6 +859,21 @@ class Peer:
         else:
             os.system("clear")
 
+    def shutdown(self):
+        #encerramento correto dos peers atraves do keyboardinterrupt tambem
+        print("\n[INFO] Encerrando o peer...")
+
+        if self.in_group_chat:
+            self.leave_group_chat()
+
+        self.clean_pending_requests(reject=True)
+
+        self.peer_server_socket.close()
+
+        self.tracker_connection.peer_socket.close()
+        print("[INFO] Peer encerrado, Até logo!")
+
+
 if __name__ == "__main__":
     port = 0
     if len(sys.argv) > 1:
@@ -869,4 +884,9 @@ if __name__ == "__main__":
             sys.exit(1)
             
     peer = Peer(peer_listen_port=port)
-    peer.start()
+    try:
+        peer.start()
+    except KeyboardInterrupt:
+        peer.shutdown()
+    finally:
+        print("\n[INFO] Finalizando processo.")

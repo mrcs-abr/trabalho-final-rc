@@ -175,4 +175,11 @@ class Tracker:
     
 if __name__ == "__main__":
     tracker = Tracker()
-    tracker.listen()
+    try:
+        tracker.listen()
+    except KeyboardInterrupt:
+        print("\n[INFO] Encerrando o tracker... Salvando dados.")
+        #salvar os dados para encerrar corretamente
+        tracker.user_manager.save_users()
+        tracker.room_manager.save_rooms()
+        print("[INFO] Dados salvos. tracker encerrado!!")
