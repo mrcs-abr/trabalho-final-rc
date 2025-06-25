@@ -1,6 +1,8 @@
 import socket, json, time, threading, os, sys
 from utils.encrypt_utils import deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key
 from peer_managers.tracker_connection_manager import Tracker_connection_manager
+from peer_managers.auth_manager import Auth_manager
+from utils.terminal_utils import clear_terminal
 
 class Peer:
     def __init__(self, peer_host= "0.0.0.0", peer_listen_port=5565, max_conec=5):
@@ -8,6 +10,9 @@ class Peer:
         self.tracker_connection = Tracker_connection_manager()
         self.tracker_connection.connect_to_tracker()
         self.tracker_public_key = self.tracker_connection.tracker_public_key
+
+        # Configura o manager de autenticação
+        self.auth_manager = Auth_manager(self.tracker_connection, self)
 
         # Configura conexao com peers
         self.peer_host = peer_host
@@ -44,7 +49,7 @@ class Peer:
     def start(self):
         threading.Thread(target=self.peer_listen, daemon=True).start()
         while True:
-            self.clear_terminal()
+            clear_terminal()
             print("========== Tela inicial Chatp2p ==========")
             print("Escolha uma opção: ")
             print("[1] Login")
@@ -60,8 +65,8 @@ class Peer:
                     continue
             
             match option:
-                case 1: self.process_login()
-                case 2: self.process_register()
+                case 1: self.auth_manager.process_login()
+                case 2: self.auth_manager.process_register()
                 case 3:
                     if self.in_group_chat:
                         self.leave_group_chat()
@@ -179,67 +184,13 @@ class Peer:
             sys.stdout.write("Eu: ")
             sys.stdout.flush()
     # FIM DA ALTERAÇÃO
-
-    def process_login(self):
-        while True:
-            self.clear_terminal()
-            print("========== Login ==========")
-            user = input("Digite seu usuario: ").strip()
-            input_password = input("Digite sua senha: ").strip()
-            requisition = {
-                "cmd": "login", 
-                "usr": user, 
-                "password": input_password,
-                "peer-listen-port": self.peer_listen_port,
-            }
-
-            response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
-
-            if response.get("status") == "ok":
-                print(response.get("message"))
-                self.username = user
-                threading.Thread(target=self.tracker_connection.send_heartbeat, daemon=True).start()
-                self.process_chat_functions()
-                return
-            else:
-                print(response.get("message"))
-                option = input("Deseja tentar novamente? [s/n]: ").strip()
-
-                if option == "n":
-                    break
-
-    def process_register(self):
-        while True:
-            self.clear_terminal()
-            print("========== Registro de usuario ==========")
-            user = input("Digite um nome de usuario: ").strip()
-            input_password = input("Digite uma senha: ").strip()
-
-            if user and input_password:
-                requisition = {
-                    "cmd": "register", 
-                    "usr": user, 
-                    "password": input_password,
-                }
-
-                response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
-                if response.get("status") == "ok":
-                    print(response.get("message"))
-                    input("Pressione qualquer tecla para ir para a tela de login...")
-                    break
-                else:
-                    input("O nome de usuário em uso, tente novamente com outro nome.\nPressione qualquer tecla para continuar...")
-
-            else:
-                print("Usuario ou senha invalidos, tente novamente")
-
     def process_chat_functions(self):
         while True:
             if self.chatting or self.in_group_chat:
                 time.sleep(1)
                 continue
 
-            self.clear_terminal()
+            clear_terminal()
             print(f"========== Chatp2p - Logado como: {self.username} ==========")
             with self.pending_requests_lock:
                 if self.pending_chat_requests:
@@ -285,7 +236,7 @@ class Peer:
         response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         users_list = response.get("peer-list")
         
-        self.clear_terminal()
+        clear_terminal()
         print("========== Lista de usuários ativos ==========")
         for user in users_list:
             print(f"Usuario: {user}")
@@ -296,7 +247,7 @@ class Peer:
         requisition = {"cmd": "list-peers"}
         response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
 
-        self.clear_terminal()
+        clear_terminal()
         print("========== Iniciar chat privado ==========")    
         if response.get("status") != "ok" or not response.get("peer-list"):
             print("Não há outros usuários ativos no momento.")
@@ -390,7 +341,7 @@ class Peer:
         response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
         rooms_list = response.get("room-list")
         
-        self.clear_terminal()
+        clear_terminal()
         print("========== Lista de salas ==========")
         if rooms_list:
             for room in rooms_list:
@@ -402,7 +353,7 @@ class Peer:
 
     def handle_peer_chat(self, conn, peer_public_key, peer_username):
         self.chatting = True
-        self.clear_terminal()
+        clear_terminal()
         print(f"Chat com {peer_username} iniciado. Digite '/sair' para sair.")
 
         threading.Thread(target=self.receive_messages,args=(conn, peer_username), daemon=True).start()
@@ -481,7 +432,7 @@ class Peer:
         
         rooms_list = response.get("room-list")
         
-        self.clear_terminal()
+        clear_terminal()
         print("========== Entrar em Sala ==========")
         print("Salas disponíveis:")
         for i, room in enumerate(rooms_list, 1):
@@ -562,7 +513,7 @@ class Peer:
         input("Pressione qualquer tecla para retornar...")
 
     def handle_group_chat(self):
-        self.clear_terminal()
+        clear_terminal()
         print(f"Bem-vindo à sala '{self.current_room}'. Digite '/sair' para sair.")
         
         try:
@@ -619,7 +570,7 @@ class Peer:
         time.sleep(1)
 
     def process_pending_chats(self):
-        self.clear_terminal()
+        clear_terminal()
         print("========== Pedidos de Chat Pendentes ==========")      
         with self.pending_requests_lock:
             if not self.pending_chat_requests:
@@ -695,7 +646,7 @@ class Peer:
             self.pending_chat_requests.clear()
     
     def process_create_room(self): 
-        self.clear_terminal()       
+        clear_terminal()       
         print("========== Criar Sala ==========")
         room_name = input("Digite o nome da sala: ").strip()
         
@@ -721,7 +672,7 @@ class Peer:
         input("Pressione qualquer tecla para retornar: ")
 
     def process_manage_room(self):
-        self.clear_terminal()
+        clear_terminal()
         print("========== Gerenciar Sala ==========")
         requisition = {
             "cmd": "list-my-rooms"
@@ -748,7 +699,7 @@ class Peer:
             return
         
         while True:
-            self.clear_terminal()
+            clear_terminal()
             print(f"\n========== Gerenciando Sala: {room_name} ==========")
             print("[1] Listar membros")
             print("[2] Adicionar membro")
@@ -782,7 +733,7 @@ class Peer:
         members = response.get("members")
         moderator = response.get("moderator")
 
-        self.clear_terminal()
+        clear_terminal()
         print(f"========== Usuários com acesso a sala <{room_name}> ==========")
         print(f"Moderador: {moderator}")
         print("Membros:")
@@ -792,7 +743,7 @@ class Peer:
         input("\nPressione qualquer tecla para retornar...")
     
     def process_add_member(self, room_name):
-        self.clear_terminal()
+        clear_terminal()
         user = input("Digite o nome do usuário para adicionar: ").strip()
         if not user:
             print("Nome inválido")
@@ -809,7 +760,7 @@ class Peer:
         input("Pressione qualquer tecla para retornar...")
     
     def process_remove_member(self, room_name):
-        self.clear_terminal()
+        clear_terminal()
         user = input("Digite o nome do usuário para remover: ").strip()
         if not user:
             print("Nome inválido")
@@ -842,12 +793,6 @@ class Peer:
         if response.get("status") == "ok":
             return True
         return False
-
-    def clear_terminal(self):
-        if os.name == 'nt':
-            os.system('cls')
-        else:
-            os.system("clear")
 
     def shutdown(self):
         #encerramento correto dos peers atraves do keyboardinterrupt tambem
