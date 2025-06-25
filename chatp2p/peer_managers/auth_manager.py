@@ -24,7 +24,7 @@ class Auth_manager():
 
             if response.get("status") == "ok":
                 print(response.get("message"))
-                self.username = user
+                self.peer_atributes.username = user
                 threading.Thread(target=self.tracker_connection.send_heartbeat, daemon=True).start()
                 self.peer_atributes.process_chat_functions()
                 return

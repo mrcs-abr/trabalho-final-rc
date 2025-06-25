@@ -2,6 +2,7 @@ import socket, json, time, threading, os, sys
 from utils.encrypt_utils import deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key
 from peer_managers.tracker_connection_manager import Tracker_connection_manager
 from peer_managers.auth_manager import Auth_manager
+from peer_managers.peer_room_manager import Peer_room_manager
 from utils.terminal_utils import clear_terminal
 
 class Peer:
@@ -10,11 +11,12 @@ class Peer:
         self.tracker_connection = Tracker_connection_manager()
         self.tracker_connection.connect_to_tracker()
         self.tracker_public_key = self.tracker_connection.tracker_public_key
-
         # Configura o manager de autenticação
         self.auth_manager = Auth_manager(self.tracker_connection, self)
+        # Configura o manager de salas
+        self.peer_room_manager = Peer_room_manager(self.tracker_connection)
 
-        # Configura conexao com peers
+        # Configura server de conexao com peers
         self.peer_host = peer_host
         self.peer_listen_port = peer_listen_port
         self.peer_info = (peer_host, peer_listen_port)
@@ -204,8 +206,7 @@ class Peer:
             print("[4] Criar sala")
             print("[5] Entrar em uma sala")
             print("[6] Gerenciar sala (se moderador)")
-            print("[7] Ver pedidos de chat")
-            print("[8] Logout")
+            print("[7] Ver pedidos de chat")            
             
             try:
                 option = int(input("->"))
@@ -219,11 +220,8 @@ class Peer:
                 case 3: self.process_list_rooms()
                 case 4: self.process_create_room()
                 case 5: self.process_join_room()
-                case 6: self.process_manage_room()
+                case 6: self.peer_room_manager.process_manage_room()
                 case 7: self.process_pending_chats()
-                case 8:
-                    print("Deslogando...")
-                    return 
                 case _:
                     print("Opção inválida")
 
@@ -670,129 +668,6 @@ class Peer:
             print(f"Erro durante a criação da sala: {str(e)}")
         
         input("Pressione qualquer tecla para retornar: ")
-
-    def process_manage_room(self):
-        clear_terminal()
-        print("========== Gerenciar Sala ==========")
-        requisition = {
-            "cmd": "list-my-rooms"
-        }
-        
-        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
-
-        if response.get("status") != "ok" or not response.get("rooms"):
-            print("Você não é moderador de nenhuma sala")
-            input("Pressione qualquer tecla para voltar...")
-            return
-        
-        print("Suas salas (como moderador):")
-        for i, room in enumerate(response["rooms"], 1):
-            print(f"[{i}] {room}")
-        
-        try:
-            choice = int(input("Selecione a sala para gerenciar (0 para cancelar): "))
-            if choice == 0:
-                return
-            room_name = response["rooms"][choice-1]
-        except:
-            print("Seleção inválida")
-            return
-        
-        while True:
-            clear_terminal()
-            print(f"\n========== Gerenciando Sala: {room_name} ==========")
-            print("[1] Listar membros")
-            print("[2] Adicionar membro")
-            print("[3] Remover membro")
-            print("[4] Fechar sala")
-            print("[0] Voltar")
-            
-            try:
-                option = int(input("-> "))
-            except ValueError:
-                print("Opção inválida")
-                continue
-            
-            match option:
-                case 1: self.process_list_room_members(room_name)
-                case 2: self.process_add_member(room_name)
-                case 3: self.process_remove_member(room_name)
-                case 4:
-                    if self.process_close_room(room_name):
-                        return
-                case 0: return
-                case _: print("Opção inválida")
-        
-    def process_list_room_members(self, room_name):
-        requisition = {
-            "cmd": "list-members",
-            "room-name": room_name
-        }
-        
-        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
-        members = response.get("members")
-        moderator = response.get("moderator")
-
-        clear_terminal()
-        print(f"========== Usuários com acesso a sala <{room_name}> ==========")
-        print(f"Moderador: {moderator}")
-        print("Membros:")
-        for member in members:
-            print(f"- {member}")
-
-        input("\nPressione qualquer tecla para retornar...")
-    
-    def process_add_member(self, room_name):
-        clear_terminal()
-        user = input("Digite o nome do usuário para adicionar: ").strip()
-        if not user:
-            print("Nome inválido")
-            return
-        
-        requisition = {
-            "cmd": "add-member",
-            "room-name": room_name,
-            "user": user
-        }
-        
-        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
-        print(response.get("message"))
-        input("Pressione qualquer tecla para retornar...")
-    
-    def process_remove_member(self, room_name):
-        clear_terminal()
-        user = input("Digite o nome do usuário para remover: ").strip()
-        if not user:
-            print("Nome inválido")
-            return
-        
-        requisition = {
-            "cmd": "remove-member",
-            "room-name": room_name,
-            "user": user
-        }
-        
-        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
-        print(response.get("message"))
-        input("Pressione qualquer tecla para retornar...")
-    
-    def process_close_room(self, room_name):
-        confirm = input(f"Tem certeza que deseja fechar a sala '{room_name}'? (s/n): ").strip().lower()
-        if confirm != 's':
-            print("Operação cancelada")
-            return False
-        
-        requisition = {
-            "cmd": "close-room",
-            "room-name": room_name
-        }
-        
-        response = self.tracker_connection.send_and_recv_encrypted_request(requisition)
-        print(response.get("message"))
-        input("Pressione qualquer tecla para retornar...")
-        if response.get("status") == "ok":
-            return True
-        return False
 
     def shutdown(self):
         #encerramento correto dos peers atraves do keyboardinterrupt tambem
