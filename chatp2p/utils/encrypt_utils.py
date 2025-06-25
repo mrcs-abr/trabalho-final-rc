@@ -2,7 +2,7 @@ from nacl.public import PrivateKey, PublicKey, Box
 from nacl.encoding import Base64Encoder
 import base64, hashlib
 
-def generate_rsa_keys():
+def generate_ecc_keys():
     private_key = PrivateKey.generate()
     public_key = private_key.public_key
     return private_key, public_key
@@ -44,8 +44,7 @@ def decrypt_with_private_key(private_key, encrypted_message):
     box = Box(private_key, ephemeral_public)
     
     # Descriptografa a mensagem
-    decrypted = box.decrypt(ciphertext)
-    
+    decrypted = box.decrypt(ciphertext)    
     return decrypted.decode('utf-8')
 
 def hash_password(password):

@@ -1,11 +1,10 @@
 import socket, json, threading, time
 from tracker_managers.user_manager import User_manager
 from tracker_managers.room_manager import Room_manager
-from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
+from utils.encrypt_utils import generate_ecc_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key
 
 class Tracker:
     def __init__(self, host='0.0.0.0', port=6000, max_connec=5):
-        # ... (código inalterado) ...
         self.host = host
         self.port = port
         self.server_info = (host, port)
@@ -13,7 +12,7 @@ class Tracker:
         self.server.bind(self.server_info)
         self.server.listen(max_connec)
 
-        self.private_key, self.public_key = generate_rsa_keys()
+        self.private_key, self.public_key = generate_ecc_keys()
         self.public_key_str = serialize_public_key(self.public_key)
 
         self.user_manager = User_manager()
@@ -27,7 +26,6 @@ class Tracker:
 
 
     def monitor_inactive_users(self):
-        # ... (código inalterado) ...
         while True:
             time.sleep(30)
             now = time.time()
@@ -46,7 +44,6 @@ class Tracker:
 
 
     def listen(self):
-        # ... (código inalterado) ...
         while True:
             peer_conec, address = self.server.accept()
             print("Conexao de: " + str(address))
@@ -157,9 +154,7 @@ class Tracker:
                                 response = self.user_manager.update_heartbeat(user)
                                 self.room_manager.update_mod_heartbeat(user)
                         
-                    # INÍCIO DA ALTERAÇÃO: Adicionando de volta o print para logging no console do tracker
                     print(f"Comando '{cmd}' de '{user if user else str(address)}'. Resposta: {response}")
-                    # FIM DA ALTERAÇÃO
 
                     encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
                     peer_conec.send(encrypted_response.encode())
@@ -179,7 +174,6 @@ if __name__ == "__main__":
         tracker.listen()
     except KeyboardInterrupt:
         print("\n[INFO] Encerrando o tracker... Salvando dados.")
-        #salvar os dados para encerrar corretamente
         tracker.user_manager.save_users()
         tracker.room_manager.save_rooms()
         print("[INFO] Dados salvos. tracker encerrado!!")

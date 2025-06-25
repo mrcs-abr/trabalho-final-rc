@@ -5,7 +5,7 @@ from utils.encrypt_utils import(
     decrypt_with_private_key,
     deserialize_public_key,
     serialize_public_key,
-    generate_rsa_keys
+    generate_ecc_keys
 )
 
 class Tracker_connection_manager:
@@ -14,7 +14,7 @@ class Tracker_connection_manager:
         self.tracker_port = tracker_port
         self.tracker_info = (tracker_host, tracker_port)
         self.peer_socket_lock = threading.Lock()
-        self.private_key, self.public_key = generate_rsa_keys()
+        self.private_key, self.public_key = generate_ecc_keys()
         self.public_key_str = serialize_public_key(self.public_key)
         self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.peer_socket.settimeout(5)

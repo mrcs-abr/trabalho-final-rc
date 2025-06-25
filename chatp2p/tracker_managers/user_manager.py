@@ -90,8 +90,3 @@ class User_manager:
                 self.active_peers[user]["last-seen"] = time.time()
                 return {"status": "ok", "message": f"heartbeat recebido de {user}"}
     
-    # INÍCIO DA ALTERAÇÃO: O método monitor_users foi movido para a classe Tracker
-    # para centralizar a lógica de logout e limpeza de salas.
-    # def monitor_users(self):
-    #     ...
-    # FIM DA ALTERAÇÃO

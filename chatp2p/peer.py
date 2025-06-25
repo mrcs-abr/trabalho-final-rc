@@ -1,5 +1,5 @@
 import socket, json, time, threading, os, sys
-from utils.encrypt_utils import generate_rsa_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key, hash_password
+from utils.encrypt_utils import deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key
 from peer_managers.tracker_connection_manager import Tracker_connection_manager
 
 class Peer:
@@ -42,7 +42,6 @@ class Peer:
                 break
         
     def start(self):
-        # ... (código inalterado)
         threading.Thread(target=self.peer_listen, daemon=True).start()
         while True:
             self.clear_terminal()
@@ -71,7 +70,6 @@ class Peer:
                     self.clean_pending_requests()
                     return # Sai do programa
 
-    # INÍCIO DA ALTERAÇÃO: Melhoria na exibição de notificações durante o chat em grupo
     def process_new_peer_connection(self, user_connec, addr):
         try:
             data = user_connec.recv(4096).decode()
@@ -89,7 +87,6 @@ class Peer:
 
             match request_type:
                 case "chat_request": 
-                    #... (código inalterado)
                     if self.chatting or self.in_group_chat:
                         response = {"type": "busy"}
                         encrypted = encrypt_with_public_key(
@@ -135,11 +132,7 @@ class Peer:
                     user_connec.close()
         except (ConnectionResetError, json.JSONDecodeError, ValueError, OSError):
             user_connec.close()
-    # FIM DA ALTERAÇÃO
 
-    # ... (demais funções até receive_group_messages)...
-
-    # INÍCIO DA ALTERAÇÃO: CORREÇÃO CRÍTICA NA FUNÇÃO DE RECEBER MENSAGENS EM GRUPO
     def receive_group_messages(self, conn, peer_username):
         """Escuta por mensagens de um peer específico no chat em grupo e as exibe na tela."""
         while self.in_group_chat:
@@ -148,8 +141,6 @@ class Peer:
                 if not encrypted_message:
                     break # Conexão fechada
 
-                # CORREÇÃO: A variável correta a ser passada para a descriptografia é a 'encrypted_message' que acabamos de receber.
-                # O erro estava aqui, usando 'decrypted_message' antes de ser definida.
                 decrypted_message = decrypt_with_private_key(self.tracker_connection.private_key, encrypted_message)
                 data = json.loads(decrypted_message)
                 
@@ -189,7 +180,6 @@ class Peer:
             sys.stdout.flush()
     # FIM DA ALTERAÇÃO
 
-    # ... (Restante do arquivo permanece o mesmo)
     def process_login(self):
         while True:
             self.clear_terminal()
@@ -867,9 +857,7 @@ class Peer:
             self.leave_group_chat()
 
         self.clean_pending_requests(reject=True)
-
         self.peer_server_socket.close()
-
         self.tracker_connection.peer_socket.close()
         print("[INFO] Peer encerrado, Até logo!")
 
