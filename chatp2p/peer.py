@@ -4,6 +4,7 @@ from peer_managers.tracker_connection_manager import Tracker_connection_manager
 from peer_managers.auth_manager import Auth_manager
 from peer_managers.peer_room_manager import Peer_room_manager
 from utils.terminal_utils import clear_terminal
+from datetime import datetime
 
 class Peer:
     def __init__(self, peer_host= "0.0.0.0", peer_listen_port=5565, max_conec=5):
@@ -155,7 +156,8 @@ class Peer:
                 if msg_type == "group_message":
                     # Melhoria na interface: Limpa a linha de input, imprime a mensagem e redesenha o prompt
                     sys.stdout.write('\r' + ' ' * 80 + '\r') # Limpa a linha atual
-                    print(f"{peer_username}: {data['content']}")
+                    message = data['content'].strip()
+                    sys.stdout.write(f"{peer_username}: {message}\n")
                     sys.stdout.write("Eu: ")
                     sys.stdout.flush()
 
@@ -358,7 +360,8 @@ class Peer:
 
         while self.chatting:
             try:
-                message_text = input("Eu: ")
+                timestamp = datetime.now().strftime('%H:%M')
+                message_text = input(f"[{timestamp}] Eu: ")
 
                 if not self.chatting:
                     break
@@ -409,7 +412,8 @@ class Peer:
                     break
                 
                 elif data.get("type") == "message":
-                    print(f"\r{peer_username}: {data['content']}\nEu: ", end="")
+                    timestamp = datetime.now().strftime('%H:%M')
+                    print(f"\r[{timestamp}] {peer_username}: {data['content']}\n[{timestamp}] Eu: ", end="")
 
             except (json.JSONDecodeError, ConnectionResetError, ValueError):
                 print(f"\n[AVISO] Conexão com {peer_username} perdida ou dados corrompidos.")
