@@ -55,13 +55,10 @@ class User_manager:
     def logout(self, user):
         with self.active_peers_lock:
             if user in self.active_peers:
-                try:
-                    self.active_peers[user]["peer-conec"].close()
-                except Exception as e:
-                    print(f"Erro ao fechar conexao para {user}: {e}")
-                finally:
-                    del self.active_peers[user]
-                    print(f"Usuário {user} desconectado")
+                del self.active_peers[user]
+                print(f"Usuário {user} desconectado")
+                return {"status": "ok", "message": "Logout bem-sucedido"}
+            return {"status": "error", "message": "Usuário não estava logado"}
     
     def list_active_peers(self, requesting_user):
         with self.active_peers_lock:

@@ -208,7 +208,8 @@ class Peer:
             print("[4] Criar sala")
             print("[5] Entrar em uma sala")
             print("[6] Gerenciar sala (se moderador)")
-            print("[7] Ver pedidos de chat")            
+            print("[7] Ver pedidos de chat")
+            print("[0] Logout")            
             
             try:
                 option = int(input("->"))
@@ -224,6 +225,9 @@ class Peer:
                 case 5: self.process_join_room()
                 case 6: self.peer_room_manager.process_manage_room()
                 case 7: self.process_pending_chats()
+                case 0: 
+                    self.process_logout()
+                    return
                 case _:
                     print("Opção inválida")
 
@@ -238,9 +242,12 @@ class Peer:
         
         clear_terminal()
         print("========== Lista de usuários ativos ==========")
-        for user in users_list:
-            print(f"Usuario: {user}")
-
+        if users_list:
+            for user in users_list:
+                print(f"Usuario: {user}")
+        else:
+            print("Não há outros usuários ativos no momento.")
+        
         input("pressione qualquer tecla para retornar: ")
     
     def process_peer_chat_client(self):
@@ -673,9 +680,24 @@ class Peer:
         
         input("Pressione qualquer tecla para retornar: ")
 
+    def process_logout(self):
+        print("Deslogando...")
+        requisition = {"cmd":"logout"}
+        self.tracker_connection.send_and_recv_encrypted_request(requisition)
+
+        if self.in_group_chat:
+            self.leave_group_chat()
+        
+        self.clean_pending_requests(reject=True)
+        self.username = None
+        print("Você foi deslogado.")
+        time.sleep(1.5)
+        return
+
+
     def shutdown(self):
         #encerramento correto dos peers atraves do keyboardinterrupt tambem
-        print("\n[INFO] Encerrando o peer...")
+        print("[INFO] Encerrando o peer...")
 
         if self.in_group_chat:
             self.leave_group_chat()
@@ -701,4 +723,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         peer.shutdown()
     finally:
-        print("\n[INFO] Finalizando processo.")
+        print("[INFO] Finalizando processo.")

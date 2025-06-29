@@ -1,4 +1,5 @@
 import socket, json, threading, time
+from datetime import datetime
 from tracker_managers.user_manager import User_manager
 from tracker_managers.room_manager import Room_manager
 from utils.encrypt_utils import generate_ecc_keys, serialize_public_key, deserialize_public_key, encrypt_with_public_key, decrypt_with_private_key
@@ -82,6 +83,12 @@ class Tracker:
                             if response.get("status") == "ok":
                                 user = response.get("usr")
 
+                        case "logout":
+                            if user:
+                                response = self.user_manager.logout(user)
+                                if response.get("status") == "ok":
+                                    user = None
+                        
                         case "register":
                             response = self.user_manager.register(peer_requisition["usr"], peer_requisition["password"])
                         
@@ -153,8 +160,9 @@ class Tracker:
                             if user:
                                 response = self.user_manager.update_heartbeat(user)
                                 self.room_manager.update_mod_heartbeat(user)
-                        
-                    print(f"Comando '{cmd}' de '{user if user else str(address)}'. Resposta: {response}")
+                    
+                    timestamp = datetime.now().strftime('%H:%M')  
+                    print(f"[{timestamp}] Comando '{cmd}' de '{user if user else str(address)}'. Resposta: {response}")
 
                     encrypted_response = encrypt_with_public_key(peer_public_key, json.dumps(response))
                     peer_conec.send(encrypted_response.encode())
