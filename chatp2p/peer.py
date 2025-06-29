@@ -549,7 +549,6 @@ class Peer:
         finally:
             self.leave_group_chat()
 
-
     def leave_group_chat(self):
         if not self.in_group_chat:
             return
@@ -694,7 +693,6 @@ class Peer:
         time.sleep(1.5)
         return
 
-
     def shutdown(self):
         #encerramento correto dos peers atraves do keyboardinterrupt tambem
         print("[INFO] Encerrando o peer...")
@@ -706,7 +704,6 @@ class Peer:
         self.peer_server_socket.close()
         self.tracker_connection.peer_socket.close()
         print("[INFO] Peer encerrado, Até logo!")
-
 
 if __name__ == "__main__":
     port = 0
