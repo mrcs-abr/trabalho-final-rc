@@ -104,7 +104,7 @@ class Peer:
                         return
 
                     requester_user = request.get("from_user")
-                    print(f"\n[NOTIFICAÇÃO] Você recebeu um pedido de chat de {requester_user}. Verifique o menu.")
+                    print(f"[NOTIFICAÇÃO] Você recebeu um pedido de chat de {requester_user}. Verifique o menu.")
                     with self.pending_requests_lock:
                         self.pending_chat_requests.append({
                             "user": requester_user,
@@ -406,7 +406,8 @@ class Peer:
                 encrypted_message = conn.recv(4096).decode()
                 
                 if not encrypted_message:
-                    print(f"\n[AVISO] Conexão perdida com {peer_username}.")
+                    if self.chatting:
+                        print(f"\n[AVISO] Conexão perdida com {peer_username}.")
                     self.chatting = False
                     break
                 
